@@ -1,0 +1,6 @@
+node_modules/
+.state/
+*.log
+
+# Local trial archives can contain private task and native session data.
+evidence/

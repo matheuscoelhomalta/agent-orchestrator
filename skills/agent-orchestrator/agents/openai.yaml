@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent Orchestrator"
+  short_description: "Coordinate and monitor native harness workers"
+  default_prompt: "Use $agent-orchestrator to delegate, monitor, and verify native harness tasks."
+policy:
+  allow_implicit_invocation: false

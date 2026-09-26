@@ -1,0 +1,15 @@
+{
+  "name": "agent-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lean task supervision over native ACP agent sessions",
+  "bin": {"agent-orchestrator": "src/cli.mjs"},
+  "scripts": {"test": "node --test test/*.test.mjs", "check": "node --check src/cli.mjs && node --check src/worker.mjs && node --check src/core.mjs"},
+  "engines": {"node": ">=22"},
+  "dependencies": {
+    "acpx": "0.19.3",
+    "@agentclientprotocol/codex-acp": "1.13.1",
+    "@agentclientprotocol/claude-agent-acp": "0.76.0"
+  }
+}

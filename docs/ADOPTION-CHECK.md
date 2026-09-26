@@ -1,0 +1,11 @@
+# Skill adoption and coordinator-led review
+
+2026-09-26. The existing two-file skill package was linked, without replacing conflicts, into `~/.agents/skills/agent-orchestrator` and `~/.claude/skills/agent-orchestrator`. Both client roots remain real directories; links resolve to the project package. Explicit invocation remains enabled and automatic invocation remains disabled. YAML metadata and link targets were verified. Routing review: delegated native task supervision matches; controlling Ghostty panes and creating spreadsheets do not.
+
+Two instruction improvements were applied: repeat monitoring while work remains outstanding, and save every new reply/correction request ID before monitoring and acceptance. No new dependencies or dashboard were introduced.
+
+A native Codex coordinator read the installed skill and delegated exactly one real read-only documentation consistency review to Claude through the CLI. It monitored the task, inspected source evidence, and explicitly accepted the current Claude request. Root independently confirmed the worker, request, acceptance and source branches. The three confirmed documentation omissions were subsequently clarified: invalid-schema JSON, additional unknown-outcome cases, and resolve settling as failed. No contradictory documented behavior was found.
+
+The outer coordinator did not finish within its initial 240-second turn: it spent extra time investigating a report the root created concurrently, after the inner worker was already accepted. The CLI correctly recorded unknown. Root verified known effects, source/skill hashes and worker settlement, explicitly resolved the current request, and requested only a summary without tools or repeated review. The same native session returned strict JSON, which root verified and accepted. This is not an uninterrupted end-to-end pass and does not prove every main agent will follow the skill reliably. It does show actual main-agent delegation, monitoring, substantive acceptance and safe handling of its own timeout.
+
+Compact evidence is `../evidence/adoption-check/checks.json` and `final-summary.json`. Private nested task/native state remains outside the repository. The later Grok bypass-flag guard and documentation edits were root integration changes after the read-only baseline was verified.
