@@ -95,7 +95,8 @@ export async function main(argv = process.argv.slice(2)) {
     const deadline = Date.now() + number(flags.timeout, 300, 1, 3600) * 1000;
     for (;;) {
       const workers = (ids.length ? ids : store.list().map(x => x.id)).map(x => summarize(reconcile(store, x)));
-      const settled = !workers.some(x => activeStates.has(x.state));
+      // A stale-heartbeat unknown whose runner still lives can still change state.
+      const settled = !workers.some(x => activeStates.has(x.state) || (x.state === 'unknown' && !x.runnerDone && alive(x.runnerPid)));
       if (settled || Date.now() >= deadline) return { settled, workers };
       await new Promise(resolve => setTimeout(resolve, 1000));
     }

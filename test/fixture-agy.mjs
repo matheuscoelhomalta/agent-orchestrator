@@ -25,6 +25,8 @@ else if (scenario === 'timeout') {
   process.stderr.write('[agy] print timeout after 1s with turn in progress; returning partial output\n');
   emit({ event: 'result', result: { conversation_id, status: 'SUCCESS', response: 'partial' } });
 }
+else if (scenario === 'activecrash') { step(1, { state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command' }); process.exit(9); }
+else if (scenario === 'switch') emit({ event: 'result', result: { conversation_id: randomUUID(), status: 'SUCCESS', response: JSON.stringify({ status: 'completed', summary: 'x', evidence: [] }) } });
 else if (scenario === 'toolfail') { step(1, { state: 'DONE', step_type: 'tool', tool_name: 'run_command' }); process.stderr.write('AGY_ERROR: {"status":"UNAVAILABLE","message":"backend unavailable"}\n'); process.exit(3); }
 else if (scenario === 'fail') { process.stderr.write('AGY_ERROR: {"status":"UNAVAILABLE","message":"backend unavailable"}\n'); process.exit(3); }
 else {

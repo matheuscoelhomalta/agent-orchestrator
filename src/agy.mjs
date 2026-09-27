@@ -23,14 +23,14 @@ export async function agyTurn({ record, text, timeoutMs, event, onSpawned, onExi
   });
   // Bind the conversation once, from init or (if init was unreadable) the result.
   const identify = (conversationId, permissionMode) => {
-    if (session || !conversationId) return true;
-    if (record.nativeSessionId && conversationId !== record.nativeSessionId) {
+    if (!conversationId) return true;
+    const expected = session || record.nativeSessionId;
+    if (expected && conversationId !== expected) {
       failure = Object.assign(new Error('Native conversation identity changed.'), { code: 'SESSION_ID_CHANGED' });
       child.kill('SIGKILL');
       return false;
     }
-    session = conversationId;
-    onInit({ conversationId, permissionMode });
+    if (!session) { session = conversationId; onInit({ conversationId, permissionMode }); }
     return true;
   };
   const turn = {
@@ -40,22 +40,30 @@ export async function agyTurn({ record, text, timeoutMs, event, onSpawned, onExi
       setTimeout(() => child.kill('SIGKILL'), 5000).unref();
     },
     result: (async () => {
-      for await (const line of readline.createInterface({ input: child.stdout })) {
-        let item;
-        try { item = JSON.parse(line); } catch { continue; }
-        if (item.event === 'init') { if (!identify(item.conversation_id, item.init?.permission_mode)) break; }
-        else if (item.event === 'step_update') {
-          const step = item.step_update;
-          if (step.step_type === 'agent_response' && typeof step.text_delta === 'string') onText(step.text_delta);
-          else if (step.step_type === 'tool' && step.state !== 'ACTIVE') event({ type: 'tool_call', title: step.tool_name, status: step.state.toLowerCase() });
-        } else if (item.event === 'result') {
-          result = item.result;
-          if (!identify(result?.conversation_id)) break;
+      try {
+        for await (const line of readline.createInterface({ input: child.stdout })) {
+          let item;
+          try { item = JSON.parse(line); } catch { continue; }
+          if (!item || typeof item !== 'object') continue;
+          if (item.event === 'init') { if (!identify(item.conversation_id, item.init?.permission_mode)) break; }
+          else if (item.event === 'step_update') {
+            const step = item.step_update || {};
+            if (step.step_type === 'agent_response' && typeof step.text_delta === 'string') onText(step.text_delta);
+            // A started tool counts as activity even if the process dies before it finishes.
+            else if (step.step_type === 'tool') event({ type: 'tool_call', title: step.tool_name, status: String(step.state || '').toLowerCase() });
+          } else if (item.event === 'result') {
+            result = item.result;
+            if (!identify(result?.conversation_id)) break;
+          }
         }
+      } catch (error) {
+        // Never leave agy running unobserved after the observer fails.
+        failure ||= error;
+        child.kill('SIGKILL');
       }
       const { code, signal } = await exited;
       clearTimeout(guard);
-      onExited({ pid: child.pid, code, signal });
+      try { onExited({ pid: child.pid, code, signal }); } catch (error) { failure ||= error; }
       const deniedActions = Array.isArray(result?.denied_actions) ? result.denied_actions : [];
       if (cancelled) return { execution: { status: 'cancelled' }, deniedActions };
       if (failure) return { execution: { status: 'failed', error: { code: failure.code, message: failure.message } }, deniedActions };

@@ -42,9 +42,19 @@ Following the coordinator skill, a Claude Code main agent delegated read-only re
 
 Pilot friction: monitoring required repeated polling loops, which led to the new `wait` command.
 
+## Second round: pre-merge review, scope research, routing
+
+- **Pre-merge review** (same diff to Codex and Claude): Codex reported four bugs, all confirmed (conversation identity checked only once, started tools ignored, tool activity recorded after persistence, agy left running when the observer failed). Claude reported three of the same plus a new one (`wait` treated a still-running stale-heartbeat worker as settled), but wrongly called the identity handling correct. All were fixed with tests.
+- **Framing:** both unprompted Claude `invalid_output` results were progress notes sent as separate messages before clean final JSON. Final-message validation now applies to every ACP harness; a live Claude review then settled as needs_review with progress retained in `output`.
+- **Refused permission reported as cancelled:** Codex ended a turn as cancelled after the CLI refused its escalation. Only a coordinator-requested cancel now counts as cancelled; otherwise the task is needs_input.
+- **Scope research** (each harness on its own controls): Claude's was accurate and separated verified from inferred claims; Codex's facts held but targeted `codex exec` flags that codex-acp cannot pass; agy's key `--sandbox` claim held live, but it labeled inferences as verified.
+- **Strict configs verified live:** Codex `read-only` mode, Claude `acceptEdits`, and agy `--sandbox` each completed an in-directory edit while a shell write to the home directory failed. See the CLI contract's permission section.
+
+These results are the basis for the provisional routing guidance in the coordinator skill; the sample is small.
+
 ## Verification
 
-`make test`: syntax checks, 44 Node tests, and 3 installer tests pass. New tests cover agy completion and resume, denied actions, invalid output, cancellation, timeout, failure with and without tool activity, a missing conversation, `resolve` refusal while an orphaned agy process runs, unknown-harness errors, and `wait`. Live post-fix checks: an agy edit under `always-proceed` completed and was verified; agy and Codex 15-second timeouts settled as failed; `wait` returned when all three settled.
+`make test`: syntax checks, 46 Node tests, and 3 installer tests pass. New tests cover agy completion and resume, denied actions, invalid output, cancellation, timeout, failure with and without tool activity, a missing conversation, `resolve` refusal while an orphaned agy process runs, unknown-harness errors, and `wait`. Live post-fix checks: an agy edit under `always-proceed` completed and was verified; agy and Codex 15-second timeouts settled as failed; `wait` returned when all three settled.
 
 ## Limits
 

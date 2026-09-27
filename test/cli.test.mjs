@@ -89,6 +89,11 @@ test('real ACP permission request is rejected and surfaced', async t => {
   const callback = JSON.parse(fs.readFileSync(path.join(h.cwd, `permission-${done.nativeSessionId}.json`))); assert.deepEqual(callback.outcome, { outcome: 'selected', optionId: 'reject' });
 });
 
+test('a turn the harness cancels after a refused permission is needs_input, not cancelled', async t => {
+  const h = await setup(t); const first = await h.start('CASE:permission_cancel'); const done = await h.poll(first.id);
+  assert.equal(done.state, 'needs_input'); assert.equal((await h.run('result', first.id)).execution.status, 'cancelled');
+});
+
 test('abrupt runner loss is unknown and blocks blind resubmission', async t => {
   const h = await setup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, r => r.state === 'running' && r.admission === 'dispatched');
   process.kill(running.runnerPid, 'SIGKILL'); const unknown = await h.poll(first.id); assert.equal(unknown.state, 'unknown'); assert.equal(unknown.error.code, 'RUNNER_OUTCOME_UNKNOWN');
@@ -186,8 +191,8 @@ test('unhealthy doctor uses the JSON failure envelope', async t => {
   await assert.rejects(exec(process.execPath, [cli, 'doctor', '--config', bad, '--state-dir', h.state]), e => e.stdout === '' && JSON.parse(e.stderr).error.code === 'DOCTOR_FAILED');
 });
 
-test('Codex message framing keeps progress auditable and validates only unambiguous final messages', async t => {
-  const h = await setup(t, 'codex');
+test('ACP message framing keeps progress auditable and validates only unambiguous final messages', async t => {
+  const h = await setup(t, 'claude');
   const start = await h.start('CASE:framed');
   assert.equal((await h.poll(start.id)).state, 'needs_review');
   const result = await h.run('result', start.id);
@@ -311,4 +316,11 @@ test('wait returns once the given workers settle, or reports it timed out', asyn
 test('agy partial output after its print timeout is a timeout, not a completed turn', async t => {
   const h = await agySetup(t); const first = await h.start('CASE:timeout'); const done = await h.poll(first.id);
   assert.equal(done.state, 'failed'); assert.equal(done.error.code, 'TIMEOUT');
+});
+
+test('agy started-but-unfinished tools keep a crash unknown, and a switched conversation fails', async t => {
+  const h = await agySetup(t);
+  const [crash, switched] = await Promise.all(['CASE:activecrash', 'CASE:switch'].map(x => h.start(x)));
+  assert.equal((await h.poll(crash.id)).state, 'unknown');
+  const failed = await h.poll(switched.id); assert.equal(failed.state, 'failed'); assert.equal(failed.error.code, 'SESSION_ID_CHANGED');
 });

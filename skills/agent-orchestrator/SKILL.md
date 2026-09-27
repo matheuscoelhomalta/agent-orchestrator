@@ -20,6 +20,16 @@ agent-orchestrator --json start --harness codex --cwd /path/to/repo --prompt-fil
 
 Set worker timeouts that fit the overall task budget, leaving time for native startup, review, and settlement. Keep worker verification within the assigned files and acceptance criteria; unrelated concurrent artifacts are not a reason to broaden the task.
 
+Route by strength, then verify everything. Provisional guidance from the 2026-09-27 pilots (small sample):
+
+- Code correctness review: Codex first. For important changes add Claude as a second reviewer; each caught bugs the other missed.
+- Documentation accuracy and sourced research: Claude. It separated verified from inferred claims most reliably.
+- Antigravity (`agy`): an independent extra opinion or Google-specific work. Do not accept its claims about tool or CLI behavior without evidence; in the pilot most such claims were contradicted.
+- Simple scoped edits: any harness.
+- X/Twitter search: unavailable through this CLI (Grok is not supported).
+
+When a task needs a hard write boundary rather than an advisory `--scope`, start the worker with the strict `--config` settings documented in the CLI contract's permission section.
+
 Save every returned worker ID and request ID. Prevent concurrent writers from owning the same files. Codex and Claude are included, plus Antigravity (`agy`) when installed; agy runs under its native permission setting, which may auto-approve every tool, so verify its scope yourself; custom harness entries require trusted argv configuration and verified capability support. Do not promise Grok/X support through this CLI.
 
 ## Monitor all workers

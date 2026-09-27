@@ -23,6 +23,7 @@ lines.on('line', line => {
     const rejected = message.result?.outcome?.outcome === 'selected' && message.result.outcome.optionId === 'reject';
     fs.writeFileSync(path.join(process.cwd(), `permission-${sessionId}.json`), JSON.stringify(message.result));
     if (permission.timeout) { pending = permission.promptId; permission = null; return; }
+    if (permission.cancelOnReject) { result(permission.promptId, { stopReason: 'cancelled' }); permission = null; return; }
     finish(permission.promptId, JSON.stringify({ status: rejected ? 'failed' : 'completed', reason: 'permission rejected', summary: 'permission allowed', evidence: ['permission protocol'] }));
     permission = null;
     return;
@@ -57,8 +58,8 @@ lines.on('line', line => {
       }
       result(id, { stopReason: 'end_turn' }); return;
     }
-    if (scenario === 'permission' || scenario === 'permission_timeout') {
-      permission = { id: 'fixture-permission', promptId: id, timeout: scenario === 'permission_timeout' };
+    if (scenario === 'permission' || scenario === 'permission_timeout' || scenario === 'permission_cancel') {
+      permission = { id: 'fixture-permission', promptId: id, timeout: scenario === 'permission_timeout', cancelOnReject: scenario === 'permission_cancel' };
       send({ id: permission.id, method: 'session/request_permission', params: { sessionId, toolCall: { toolCallId: 'fixture-tool', title: 'fixture write', kind: 'edit', status: 'pending' }, options: [{ optionId: 'allow', name: 'Allow once', kind: 'allow_once' }, { optionId: 'reject', name: 'Reject once', kind: 'reject_once' }] } });
     } else if (scenario === 'malformed') finish(id, 'malformed output');
     else if (scenario === 'input') finish(id, JSON.stringify({ status: 'needs_input', question: 'Which fixture choice?' }));

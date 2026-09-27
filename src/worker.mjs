@@ -12,12 +12,13 @@ export async function runWorker(stateDir, id, requestId) {
   if (record.requestId !== requestId || record.state !== 'starting') return;
   let runtime, turn, timer;
   let output = '', execution, failure, permissionBlocked = false, promptDispatched = false, toolActivity = false;
-  let responseOutput = '', responseMessageId, framedOutput = record.harness === 'codex', finalResponse;
+  let responseOutput = '', responseMessageId, framedOutput = true, finalResponse;
   const messageIds = new Set();
   const patch = changes => store.update(id, current => current.requestId === requestId && ['starting', 'running', 'cancelling', 'unknown'].includes(current.state) ? { ...current, ...changes, updatedAt: timestamp() } : current);
   const event = value => {
-    const entry = store.appendEvent(id, { requestId, at: timestamp(), ...value });
+    // Set before persisting: a failed write must not hide that a tool started.
     if (['tool_call', 'permission_denied'].includes(value.type)) toolActivity = true;
+    const entry = store.appendEvent(id, { requestId, at: timestamp(), ...value });
     if (['text_delta', 'tool_call', 'status'].includes(value.type)) patch({ lastProgressAt: entry.at, lastEventSeq: entry.seq });
     return entry;
   };
@@ -91,7 +92,7 @@ export async function runWorker(stateDir, id, requestId) {
       for await (const item of turn.events) {
         if (item.type === 'text_delta' && item.stream !== 'thought') {
           output += item.text;
-          // Codex emits progress and its final answer as separate producer messages.
+          // Codex and Claude emit progress notes and the final answer as separate producer messages.
           // Missing or interleaved IDs leave the whole stream subject to validation.
           if (framedOutput) {
             if (typeof item.messageId !== 'string' || !item.messageId.trim()) framedOutput = false;
@@ -121,13 +122,14 @@ export async function runWorker(stateDir, id, requestId) {
     try { await runtime?.shutdown(); } catch (error) { failure ||= error; }
     execution ||= { status: 'failed', error: { code: failure?.code || 'RUNNER_FAILED', message: failure?.message || 'No settled result.' } };
     if (failure) execution = { status: 'failed', error: { code: failure.code || 'RUNNER_FAILED', message: failure.message } };
-    // agy reports its final answer separately from progress text, like Codex's framed final message.
+    // agy reports its final answer separately from progress text, like a framed ACP final message.
     if (finalResponse !== undefined) { responseOutput = finalResponse; responseMessageId = null; }
     else if (!framedOutput || !responseMessageId) { responseOutput = output; responseMessageId = null; }
     const result = classify(responseOutput, execution);
     // Side effects need tools. A dispatched turn that failed without any tool activity cannot have changed anything.
     if (execution.status === 'failed' && promptDispatched && toolActivity) result.state = 'unknown';
-    if (permissionBlocked && result.state !== 'cancelled' && result.state !== 'unknown') {
+    // Codex ends a turn as cancelled after a refused permission; only a coordinator cancel is a real cancellation.
+    if (permissionBlocked && result.state !== 'unknown' && !(result.state === 'cancelled' && cancelling)) {
       result.state = 'needs_input';
       result.response = { status: 'needs_input', question: 'A native tool permission request was denied. Review the recorded request and authorization before continuing; this CLI cannot approve a suspended dialog.' };
     }

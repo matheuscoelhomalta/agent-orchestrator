@@ -100,6 +100,16 @@ Atomic writes protect process-level consistency, not power-loss durability: no f
 
 Native Auto/Auto-review remains enabled; the ACP client denies permission callbacks it cannot authorize and surfaces them as needs_input. ACP filesystem/terminal callbacks are disabled. These settings are not an OS sandbox for native tools. Recognized native questions may fail before the permission callback and require a native client capable of handling them. The CLI does not approve a suspended native dialog or automatically broaden policy.
 
+Under the defaults, `--scope` is advisory: live tests showed Codex (Auto-review), Claude (auto), OpenCode (build), and agy (`always-proceed`) all writing outside the working directory when asked, with Codex's own reviewer approving the escalation. For tasks that need a hard boundary, use a `--config` file with these native settings, each verified live on 2026-09-27 (in-directory edit succeeded; a shell write to the home directory was blocked):
+
+| Harness | Config change | Effect |
+|---|---|---|
+| Codex | `"mode": "read-only"` and `"INITIAL_AGENT_MODE": "read-only"` | Adapter's "Ask for approval" preset (despite its id, the working directory stays writable): the workspace-write sandbox fails outside writes ("Operation not permitted"), and any escalation Codex requests reaches the CLI, which refuses it (needs_input). Both outcomes were observed live. `/tmp` and `$TMPDIR` stay writable because codex-acp hard-codes its sandbox policy. |
+| Claude | `"mode": "acceptEdits"` | Edits inside the working directory are automatic; other edits and most shell commands ask, and the CLI refuses (needs_input). Expect more stops. |
+| agy | append `"--sandbox"` to `command` | OS sandbox (Seatbelt on macOS) makes shell writes outside the workspace fail ("Operation not permitted"); agy reports the failure and continues. Google documents that network access is also off by default in this mode (not verified live). |
+
+These replace the default modes only for workers started with that config. Codex's `exclude_slash_tmp`/`exclude_tmpdir_env_var` cannot be set through codex-acp. This CLI cannot pass Claude `--settings` per worker, but claude-agent-acp loads the user, project, and local Claude settings files, so a `sandbox.enabled` setting there would reach workers (whether it activates the Bash sandbox under the adapter is untested).
+
 ## Verification
 
 `make test` runs syntax checks, ledger tests, and subprocess/ACP integration checks. Fixtures verify protocol behavior without paid calls; they do not establish native adapter parity. The live verification report separately records the bounded Codex/Claude/agy checks and remaining gaps.
@@ -107,4 +117,4 @@ Native Auto/Auto-review remains enabled; the ACP client denies permission callba
 
 ### Response framing
 
-`result.output` retains the full non-thought text transcript. `responseOutput` is the text subjected to strict JSON validation; `responseMessageId` identifies its producer message when available. For Codex only, distinct non-interleaved message IDs allow progress messages to remain auditable while validating the last message. Missing, blank, or interleaved IDs fall back to validating the whole stream. Prose within the final message is still invalid; JSON is never extracted from arbitrary text. Message IDs are framing hints, not permission or authenticity evidence. Replies archive these fields with the prior request.
+`result.output` retains the full non-thought text transcript. `responseOutput` is the text subjected to strict JSON validation; `responseMessageId` identifies its producer message when available. For ACP harnesses (Codex and Claude both send progress notes as separate messages), distinct non-interleaved message IDs allow progress messages to remain auditable while validating the last message. Missing, blank, or interleaved IDs fall back to validating the whole stream. Prose within the final message is still invalid; JSON is never extracted from arbitrary text. Message IDs are framing hints, not permission or authenticity evidence. Replies archive these fields with the prior request.
