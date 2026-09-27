@@ -21,13 +21,16 @@ function record(value, id, code = 'INVALID_INPUT') {
 }
 
 export class Store {
-  constructor(stateDir) {
+  constructor(stateDir, { lockWaitMs = 0 } = {}) {
     if (typeof stateDir !== 'string' || !stateDir) fail('INVALID_INPUT', 'A state directory is required');
     this.stateDir = path.resolve(stateDir);
+    this.lockWaitMs = lockWaitMs;
     for (const directory of [this.stateDir, ...['records', 'events', 'locks'].map(name => path.join(this.stateDir, name))]) {
-      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-      if (!fs.lstatSync(directory).isDirectory()) fail('INVALID_INPUT', 'State paths must be real directories');
-      fs.chmodSync(directory, 0o700);
+      let info;
+      try { info = fs.lstatSync(directory); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (info) {
+        if (!info.isDirectory() || (info.mode & 0o077)) fail('INVALID_INPUT', 'State paths must be real private directories; existing permissions are never changed');
+      } else fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     }
   }
 
@@ -38,11 +41,15 @@ export class Store {
   _locked(id, fn) {
     const lock = this._path('locks', id, 'lock');
     let fd;
-    try { fd = fs.openSync(lock, 'wx', 0o600); }
-    catch (error) {
-      // Never infer ownership or signal a PID from a persisted lock.
-      if (error.code === 'EEXIST') fail('LOCKED', `Worker ${id} is locked; inspect stale locks manually`);
-      throw error;
+    const deadline = Date.now() + this.lockWaitMs;
+    for (;;) {
+      try { fd = fs.openSync(lock, 'wx', 0o600); break; }
+      catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        // Wait only for bounded contention; never remove or infer ownership of a lock.
+        if (Date.now() >= deadline) fail('LOCKED', `Worker ${id} is locked; inspect stale locks manually`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
     }
     try { return fn(); }
     finally { fs.closeSync(fd); fs.unlinkSync(lock); }

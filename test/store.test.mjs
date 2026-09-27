@@ -134,3 +134,13 @@ test('concurrent processes append without losing events or sequence uniqueness',
   assert.deepEqual(events.map(e => e.seq), Array.from({ length: 60 }, (_, i) => i + 1));
   assert.equal(new Set(events.map(e => `${e.worker}:${e.value}`)).size, 60);
 });
+
+
+test('existing shared directories are rejected without changing permissions', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ledger-shared-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'shared'); fs.mkdirSync(dir, { mode: 0o755 });
+  assert.throws(() => new Store(dir), { code: 'INVALID_INPUT' });
+  assert.equal(fs.statSync(dir).mode & 0o777, 0o755);
+  assert.deepEqual(fs.readdirSync(dir), []);
+});

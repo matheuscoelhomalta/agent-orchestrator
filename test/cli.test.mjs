@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
@@ -14,19 +14,19 @@ const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixture-agent.mjs', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const active = new Set(['starting', 'running', 'cancelling']);
-async function setup(t) {
+async function setup(t, harness = 'fixture') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-cli-test-'));
   const state = path.join(root, 'state');
   const cwd = path.join(root, 'work'); fs.mkdirSync(cwd);
   const config = path.join(root, 'config.json');
-  fs.writeFileSync(config, JSON.stringify({ fixture: { command: [process.execPath, fixture], model: 'fixture-model', effort: 'low', effortKey: 'effort', mode: 'default' } }));
+  fs.writeFileSync(config, JSON.stringify({ [harness]: { command: [process.execPath, fixture], model: 'fixture-model', effort: 'low', effortKey: 'effort', mode: 'default' } }));
   let serial = 0;
   const prompt = text => { const filename = path.join(root, `prompt-${serial++}`); fs.writeFileSync(filename, text); return filename; };
   const run = async (...args) => {
     try { const { stdout } = await exec(process.execPath, [cli, ...args, '--state-dir', state, '--json'], { timeout: 15000 }); return JSON.parse(stdout).data; }
     catch (error) { error.response = JSON.parse(error.stderr || error.stdout || '{}'); throw error; }
   };
-  const start = (text, ...args) => run('start', '--harness', 'fixture', '--config', config, '--cwd', cwd, '--prompt-file', prompt(text), '--criteria', 'Fixture protocol observed', '--scope', cwd, ...args);
+  const start = (text, ...args) => run('start', '--harness', harness, '--config', config, '--cwd', cwd, '--prompt-file', prompt(text), '--criteria', 'Fixture protocol observed', '--scope', cwd, ...args);
   const poll = async (id, predicate = r => !active.has(r.state)) => {
     const until = Date.now() + 20000;
     let record;
@@ -183,4 +183,65 @@ test('unhealthy doctor uses the JSON failure envelope', async t => {
   fs.writeFileSync(bad, JSON.stringify({ missing: { command: ['/definitely/not-an-adapter'], model: 'm', mode: 'default', effort: 'low', effortKey: 'effort' } }));
   await assert.rejects(h.run('doctor', '--config', bad), e => e.response.ok === false && e.response.error.code === 'DOCTOR_FAILED' && e.response.data.ok === false);
   await assert.rejects(exec(process.execPath, [cli, 'doctor', '--config', bad, '--state-dir', h.state]), e => e.stdout === '' && JSON.parse(e.stderr).error.code === 'DOCTOR_FAILED');
+});
+
+test('Codex message framing keeps progress auditable and validates only unambiguous final messages', async t => {
+  const h = await setup(t, 'codex');
+  const start = await h.start('CASE:framed');
+  assert.equal((await h.poll(start.id)).state, 'needs_review');
+  const result = await h.run('result', start.id);
+  assert.ok(result.output.startsWith('Inspecting fixture.'));
+  assert.equal(result.responseMessageId, 'answer');
+  assert.deepEqual(JSON.parse(result.responseOutput), result.response);
+  const events = await h.run('events', start.id);
+  assert.ok(events.events.some(e => e.type === 'text_delta' && e.messageId === 'progress'));
+  for (const scenario of ['unframed', 'interleaved', 'badframe']) {
+    const next = await h.start(`CASE:${scenario}`);
+    assert.equal((await h.poll(next.id)).state, 'invalid_output');
+  }
+  await h.run('reply', start.id, '--prompt-file', h.prompt('CASE:complete'));
+  await h.poll(start.id);
+  const replied = await h.run('result', start.id);
+  assert.equal(replied.responseMessageId, null);
+  assert.equal(replied.history[0].responseMessageId, 'answer');
+});
+
+
+test('explicit blank objectives fail before creating a worker', async t => {
+  const h = await setup(t);
+  for (const objective of ['', '   ']) await assert.rejects(h.start('CASE:complete', '--objective', objective), e => e.response.error.code === 'INVALID_INPUT');
+  assert.deepEqual(new Store(h.state).list(), []);
+  const started = await h.start('CASE:complete');
+  assert.equal(new Store(h.state).get(started.id).objective, 'CASE:complete');
+  assert.equal((await h.poll(started.id)).state, 'needs_review');
+});
+
+test('runner tolerates lock contention across heartbeat and cancellation', async t => {
+  const h = await setup(t); const started = await h.start('CASE:long');
+  await h.poll(started.id, r => r.state === 'running' && r.admission === 'dispatched');
+  const moduleURL = new URL('../src/store.mjs', import.meta.url).href;
+  const holder = spawn(process.execPath, ['--input-type=module', '-e', `import { Store } from ${JSON.stringify(moduleURL)}; const store = new Store(${JSON.stringify(h.state)}); store.update(${JSON.stringify(started.id)}, current => { console.log('locked'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 900); return current; });`]);
+  await new Promise((resolve, reject) => { holder.stdout.once('data', resolve); holder.once('error', reject); });
+  const exited = new Promise((resolve, reject) => { holder.once('exit', code => code === 0 ? resolve() : reject(new Error('lock holder failed'))); });
+  await h.run('cancel', started.id);
+  await exited;
+  const done = await h.poll(started.id); assert.equal(done.state, 'cancelled');
+  const result = await h.run('result', started.id); assert.equal(result.execution.status, 'cancelled'); assert.equal(result.error, null);
+  const events = await h.run('events', started.id);
+  assert.ok(events.events.some(e => e.type === 'cancel_requested'));
+  assert.ok(events.events.some(e => e.type === 'turn_settled' && e.taskState === 'cancelled'));
+});
+
+test('CLI and worker entrypoints work from a path with URL punctuation', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator#entry?'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const project = path.dirname(path.dirname(cli));
+  fs.cpSync(path.join(project, 'src'), path.join(root, 'src'), { recursive: true });
+  fs.symlinkSync(path.join(project, 'node_modules'), path.join(root, 'node_modules'));
+  const alternate = path.join(root, 'src/cli.mjs');
+  const help = await exec(process.execPath, [alternate, '--help']); assert.match(help.stdout, /task supervision/);
+  const h = await setup(t);
+  const { stdout } = await exec(process.execPath, [alternate, 'start', '--harness', 'fixture', '--config', h.config, '--cwd', h.cwd, '--prompt-file', h.prompt('CASE:complete'), '--criteria', 'completion', '--scope', h.cwd, '--state-dir', h.state, '--json']);
+  const started = JSON.parse(stdout).data;
+  assert.equal((await h.poll(started.id)).state, 'needs_review');
 });

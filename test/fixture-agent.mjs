@@ -45,6 +45,18 @@ lines.on('line', line => {
     fs.appendFileSync(path.join(process.cwd(), `prompts-${sessionId}.ndjson`), JSON.stringify({ text, pid: process.pid }) + '\n');
     if (scenario === 'disconnect') process.exit(7);
     if (scenario === 'long') { pending = id; return; }
+    if (['framed', 'unframed', 'interleaved', 'badframe'].includes(scenario)) {
+      const chunk = (text, messageId) => send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text }, ...(messageId ? { messageId } : {}) } } });
+      const answer = JSON.stringify({ status: 'completed', summary: 'Framed answer', evidence: ['fixture inspected'] });
+      chunk('Inspecting fixture.', 'progress');
+      if (scenario === 'unframed') chunk(answer);
+      else {
+        chunk(scenario === 'badframe' ? 'extra prose' + answer : answer.slice(0, 20), 'answer');
+        if (scenario === 'interleaved') chunk('more progress', 'progress');
+        if (scenario !== 'badframe') chunk(answer.slice(20), 'answer');
+      }
+      result(id, { stopReason: 'end_turn' }); return;
+    }
     if (scenario === 'permission' || scenario === 'permission_timeout') {
       permission = { id: 'fixture-permission', promptId: id, timeout: scenario === 'permission_timeout' };
       send({ id: permission.id, method: 'session/request_permission', params: { sessionId, toolCall: { toolCallId: 'fixture-tool', title: 'fixture write', kind: 'edit', status: 'pending' }, options: [{ optionId: 'allow', name: 'Allow once', kind: 'allow_once' }, { optionId: 'reject', name: 'Reject once', kind: 'reject_once' }] } });

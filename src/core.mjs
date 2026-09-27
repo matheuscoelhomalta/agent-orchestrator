@@ -3,6 +3,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+export function supportedNode(version) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  return Boolean(match && (Number(match[1]) > 22 || Number(match[1]) === 22 && Number(match[2]) >= 13));
+}
+
 export const activeStates = new Set(['starting', 'running', 'cancelling']);
 export function fail(code, message) { return Object.assign(new Error(message), { code }); }
 export const timestamp = () => new Date().toISOString();

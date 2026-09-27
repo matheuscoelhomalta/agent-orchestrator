@@ -46,3 +46,8 @@ The user subsequently selected the minimal CLI plus coordinator skill. That impl
 ## Current adoption update — 2026-09-26
 
 The coordinator skill is now linked for Codex and Claude with explicit invocation preserved. See [daily workflow](DAILY-WORKFLOW.md), [coordinator adoption check](ADOPTION-CHECK.md), [native permission denial](NATIVE-PERMISSION-CHECK.md), [native recovery](NATIVE-RECOVERY-CHECK.md), and [Grok harness check](GROK-HARNESS-CHECK.md). Earlier evidence gaps remain historical; current reports state the verified scope and remaining limits. Source and documentation are maintained in this local checkout; private evidence and native runtime stores are excluded from version control.
+
+
+## Published-baseline follow-up — 2026-09-26
+
+Completed independent baseline review, confirmed fixes, and targeted rechecks. Syntax checks, 37 Node tests, and 3 installer tests pass. Native Codex progress/final message framing is handled without losing the audit transcript. A coordinator independently verified and accepted Codex and Claude workers launched from the normal terminal context; nested launch inside Codex's sandbox was blocked and truthfully accounted for. Grok remains standalone until an effective native permission acknowledgement and ACPX passthrough can be verified. See [baseline review and supervision](BASELINE-REVIEW-AND-SUPERVISION.md) and the [Grok contract investigation](GROK-HARNESS-CHECK.md#permission-contract-investigation).

@@ -4,3 +4,5 @@ node_modules/
 
 # Local trial archives can contain private task and native session data.
 evidence/
+
+__pycache__/

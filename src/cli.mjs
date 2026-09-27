@@ -4,9 +4,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Store } from './store.mjs';
-import { activeStates, defaultStateDir, fail, readConfig, reconcile, timestamp, validateSpec, alive, executable, summarize } from './core.mjs';
+import { activeStates, defaultStateDir, fail, readConfig, reconcile, timestamp, validateSpec, alive, executable, summarize, supportedNode } from './core.mjs';
 
 const help = `agent-orchestrator — task supervision over ACPX
 
@@ -66,10 +66,10 @@ export async function main(argv = process.argv.slice(2)) {
     const harnesses = Object.entries(readConfig(flags.config)).map(([name, spec]) => {
       const commandPresent = Boolean(executable(spec.command[0]));
       const adapterPresent = commandPresent && spec.command.slice(1).filter(x => x.endsWith('.js') || x.endsWith('.mjs')).every(x => { try { return fs.statSync(x).isFile(); } catch { return false; } });
-      const nativePresent = spec.env?.CODEX_PATH || spec.env?.CLAUDE_CODE_EXECUTABLE;
-      return { name, commandPresent, adapterPresent, nativePresent: spec.nativeCommand ? Boolean(executable(spec.nativeCommand)) : null, model: spec.model, effort: spec.effort, mode: spec.mode, authSource: 'native harness login', authVerified: false, nativeOverridePresent: nativePresent ? Boolean(executable(nativePresent)) : null };
+      const nativeOverrides = [spec.env?.CODEX_PATH, spec.env?.CLAUDE_CODE_EXECUTABLE].filter(x => x !== undefined);
+      return { name, commandPresent, adapterPresent, nativePresent: spec.nativeCommand ? Boolean(executable(spec.nativeCommand)) : null, model: spec.model, effort: spec.effort, mode: spec.mode, authSource: 'native harness login', authVerified: false, nativeOverridePresent: nativeOverrides.length ? nativeOverrides.every(x => Boolean(executable(x))) : null };
     });
-    return { ok: harnesses.every(x => x.adapterPresent && x.nativeOverridePresent !== false && x.nativePresent !== false), node: process.version, stateDir, harnesses, note: 'Static inspection only. No native session launched or authentication verified.' };
+    return { ok: supportedNode(process.version) && harnesses.every(x => x.adapterPresent && x.nativeOverridePresent !== false && x.nativePresent !== false), node: process.version, nodeSupported: supportedNode(process.version), stateDir, harnesses, note: 'Static inspection only. No native session launched or authentication verified.' };
   }
   const store = new Store(stateDir);
   if (command === 'start') {
@@ -81,7 +81,7 @@ export async function main(argv = process.argv.slice(2)) {
     const cwd = fs.realpathSync(flags.cwd || process.cwd());
     if (!fs.statSync(cwd).isDirectory()) throw fail('INVALID_INPUT', '--cwd must be a directory.');
     const record = { schema: 1, id: randomUUID(), requestId: randomUUID(), harness, spec,
-      objective: flags.objective || prompt, criteria: required(flags.criteria, '--criteria'), scope: required(flags.scope, '--scope'), prompt, cwd,
+      objective: flags.objective === undefined ? prompt : required(flags.objective, '--objective'), criteria: required(flags.criteria, '--criteria'), scope: required(flags.scope, '--scope'), prompt, cwd,
       timeoutMs: number(flags.timeout, 300, 1, 3600) * 1000, state: 'starting', admission: 'not_confirmed', corrections: 0, turn: 1, runnerDone: false,
       createdAt: timestamp(), updatedAt: timestamp() };
     store.create(record);
@@ -90,7 +90,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === 'status') return id ? summarize(reconcile(store, id)) : store.list().map(x => summarize(reconcile(store, x.id)));
   const record = reconcile(store, id);
   if (command === 'events') return store.events(id, { after: number(flags.after, 0, 0, Number.MAX_SAFE_INTEGER), limit: number(flags.limit, 100, 1, 1000) });
-  if (command === 'result') return { id, requestId: record.requestId, nativeSessionId: record.nativeSessionId, state: record.state, execution: record.execution || null, response: record.response || null, output: record.output || '', acceptance: record.acceptance || null, resolution: record.resolution || null, history: record.history || [], error: record.error || null };
+  if (command === 'result') return { id, requestId: record.requestId, nativeSessionId: record.nativeSessionId, state: record.state, execution: record.execution || null, response: record.response || null, output: record.output || '', responseOutput: record.responseOutput ?? record.output ?? '', responseMessageId: record.responseMessageId || null, acceptance: record.acceptance || null, resolution: record.resolution || null, history: record.history || [], error: record.error || null };
   if (command === 'cancel') {
     if (!activeStates.has(record.state) && !(record.state === 'unknown' && !record.runnerDone && alive(record.runnerPid))) throw fail('INVALID_STATE', `Cannot cancel ${record.state}.`);
     const cancelPath = path.join(stateDir, 'cancel', `${id}-${record.requestId}.json`);
@@ -119,18 +119,18 @@ export async function main(argv = process.argv.slice(2)) {
       if (!current.nativeSessionId) throw fail('INVALID_STATE', 'No native session is available to resume.');
       if (current.state === 'invalid_output' && !flags.correction) throw fail('INVALID_STATE', 'Replies to invalid_output require --correction and consume the correction budget.');
       if (flags.correction && (current.corrections >= 1 || current.state !== 'invalid_output')) throw fail('INVALID_STATE', 'One formatting correction is allowed, only after invalid_output.');
-      const previous = { requestId: current.requestId, state: current.state, execution: current.execution, response: current.response, output: current.output, acceptance: current.acceptance, error: current.error, resolution: current.resolution };
+      const previous = { requestId: current.requestId, state: current.state, execution: current.execution, response: current.response, output: current.output, responseOutput: current.responseOutput, responseMessageId: current.responseMessageId, acceptance: current.acceptance, error: current.error, resolution: current.resolution };
       return { ...current, state: 'starting', requestId: randomUUID(), prompt: flags.correction ? `Correct only the response format. Do not redo task work or use tools. ${prompt}` : prompt,
         history: [...(current.history || []), previous],
         turn: current.turn + 1, corrections: current.corrections + (flags.correction ? 1 : 0), runnerPid: null, runnerDone: false, admission: 'not_confirmed', heartbeatAt: timestamp(), updatedAt: timestamp(),
-        output: '', response: null, execution: null, error: null, acceptance: null, resolution: null };
+        output: '', responseOutput: '', responseMessageId: null, response: null, execution: null, error: null, acceptance: null, resolution: null };
     });
     return summarize(await launch(store, next, stateDir));
   }
   throw fail('INVALID_INPUT', `Unknown command ${command}. Use --help.`);
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   main().then(data => { if (data !== undefined) {
     const payload = data.ok === false ? { ok: false, error: { code: 'DOCTOR_FAILED', message: 'Static installation checks failed.' }, data } : { ok: true, data };
     const print = data.ok === false && !process.argv.includes('--json') ? console.error : console.log;

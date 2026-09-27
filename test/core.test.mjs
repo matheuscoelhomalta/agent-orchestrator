@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { classify, configure, reconcile, validateSpec } from '../src/core.mjs';
+import { supportedNode, classify, configure, reconcile, validateSpec } from '../src/core.mjs';
 import { main } from '../src/cli.mjs';
 import { Store } from '../src/store.mjs';
 
@@ -69,4 +69,19 @@ test('doctor refuses missing custom executable', async () => {
     fs.writeFileSync(config, JSON.stringify({ missing: { command: [process.execPath], model: 'm', mode: 'default', effort: 'low', effortKey: 'effort', env: { CODEX_PATH: native } } }));
     assert.equal((await main(['doctor', '--config', config])).ok, false);
   } finally { fs.rmSync(dir, { recursive: true }); }
+});
+
+
+test('Node support matches the pinned runtime minimum', () => {
+  for (const version of ['v20.19.0', 'v22.12.9', 'invalid']) assert.equal(supportedNode(version), false);
+  for (const version of ['v22.13.0', 'v22.13.1', 'v26.9.0']) assert.equal(supportedNode(version), true);
+});
+
+test('doctor checks every native executable override', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-overrides-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const config = path.join(dir, 'config.json');
+  fs.writeFileSync(config, JSON.stringify({ fixture: { command: [process.execPath], model: 'm', mode: 'default', effort: 'low', effortKey: 'effort', env: { CODEX_PATH: process.execPath, CLAUDE_CODE_EXECUTABLE: path.join(dir, 'missing') } } }));
+  const result = await main(['doctor', '--config', config]);
+  assert.equal(result.ok, false); assert.equal(result.harnesses[0].nativeOverridePresent, false);
 });

@@ -11,7 +11,7 @@ agent-orchestrator --json doctor
 agent-orchestrator --help
 ```
 
-Node 22+ and existing native harness logins are required. The installer refuses to replace a conflicting command. The CLI installer creates no skill links. The coordinator skill is separately linked into this machine’s Codex shared root (`~/.agents/skills/agent-orchestrator`) and Claude root (`~/.claude/skills/agent-orchestrator`), with both pointing to [skills/agent-orchestrator](skills/agent-orchestrator/SKILL.md). It remains explicitly invoked. See the [daily workflow](docs/DAILY-WORKFLOW.md).
+Node 22.13.0+ and existing native harness logins are required. The installer refuses to replace a conflicting command. The CLI installer creates no skill links. The coordinator skill is separately linked into this machine’s Codex shared root (`~/.agents/skills/agent-orchestrator`) and Claude root (`~/.claude/skills/agent-orchestrator`), with both pointing to [skills/agent-orchestrator](skills/agent-orchestrator/SKILL.md). It remains explicitly invoked. See the [daily workflow](docs/DAILY-WORKFLOW.md).
 
 ```sh
 agent-orchestrator --json start --harness codex --cwd /path/to/repo --prompt-file /path/to/task.txt --criteria 'Evidence proving the requested behavior' --scope 'Read-only src/auth inspection'
@@ -37,6 +37,7 @@ Completion JSON becomes `needs_review`; only explicit verified acceptance marks 
 - [Native permission denial](docs/NATIVE-PERMISSION-CHECK.md): actual Claude Write denial and blocker handling.
 - [Adoption check](docs/ADOPTION-CHECK.md): skill installation and a real coordinator-led review.
 - [Grok harness check](docs/GROK-HARNESS-CHECK.md): native protocol, model and X-search findings; CLI compatibility limits.
+- [Published baseline and supervision](docs/BASELINE-REVIEW-AND-SUPERVISION.md): confirmed fixes and a native two-harness monitoring pilot; nested launch boundary.
 - [Triple review](docs/TRIPLE-REVIEW.md): independent findings, confirmed fixes, and regression checks.
 - [Evidence archive](evidence/acpx-trial/README.md): original artifacts and dependency versions.
 

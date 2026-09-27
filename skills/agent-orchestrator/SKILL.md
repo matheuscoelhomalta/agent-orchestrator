@@ -10,11 +10,15 @@ Use the installed `agent-orchestrator` command. Start with `command -v agent-orc
 
 ## Delegate
 
+Workers must be launched from an execution context that can access existing native harness state and logins. A nested launch inside a main agent's sandbox can fail even when terminal authentication works. In that case, report the launch blocker and monitor workers explicitly started from the normal terminal context; do not broaden permissions or automatically replay uncertain work.
+
 Define each worker's objective, authorized scope, and concrete acceptance criteria. Start only independent tasks that materially benefit from delegation. Write the prompt to a file and run:
 
 ```sh
 agent-orchestrator --json start --harness codex --cwd /path/to/repo --prompt-file /path/to/task.txt --criteria 'Describe evidence that proves completion' --scope 'Read-only inspection of src/auth'
 ```
+
+Set worker timeouts that fit the overall task budget, leaving time for native startup, review, and settlement. Keep worker verification within the assigned files and acceptance criteria; unrelated concurrent artifacts are not a reason to broaden the task.
 
 Save every returned worker ID and request ID. Prevent concurrent writers from owning the same files. Codex and Claude are included; custom harness entries require trusted argv configuration and verified capability support. Do not promise Grok/X support through this CLI.
 

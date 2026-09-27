@@ -1,15 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createAcpRuntime, createFileSessionStore, createAgentRegistry } from 'acpx/runtime';
 import { Store } from './store.mjs';
 import { classify, configure, taskPrompt, timestamp } from './core.mjs';
 
 export async function runWorker(stateDir, id, requestId) {
-  const store = new Store(stateDir);
+  const store = new Store(stateDir, { lockWaitMs: 2000 });
   let record = store.get(id);
   if (record.requestId !== requestId || record.state !== 'starting') return;
   let runtime, turn, timer;
   let output = '', execution, failure, permissionBlocked = false, promptDispatched = false;
+  let responseOutput = '', responseMessageId, framedOutput = record.harness === 'codex';
+  const messageIds = new Set();
   const patch = changes => store.update(id, current => current.requestId === requestId && ['starting', 'running', 'cancelling', 'unknown'].includes(current.state) ? { ...current, ...changes, updatedAt: timestamp() } : current);
   const event = value => {
     const entry = store.appendEvent(id, { requestId, at: timestamp(), ...value });
@@ -62,9 +65,23 @@ export async function runWorker(stateDir, id, requestId) {
     const dispatched = turn.promptStarted.then(() => { promptDispatched = true; patch({ admission: 'dispatched' }); event({ type: 'prompt_dispatched' }); }, error => event({ type: 'prompt_not_confirmed', code: error.code }));
     const consumption = (async () => {
       for await (const item of turn.events) {
-        if (item.type === 'text_delta' && item.stream !== 'thought') output += item.text;
+        if (item.type === 'text_delta' && item.stream !== 'thought') {
+          output += item.text;
+          // Codex emits progress and its final answer as separate producer messages.
+          // Missing or interleaved IDs leave the whole stream subject to validation.
+          if (framedOutput) {
+            if (typeof item.messageId !== 'string' || !item.messageId.trim()) framedOutput = false;
+            else {
+              if (item.messageId !== responseMessageId) {
+                if (messageIds.has(item.messageId)) framedOutput = false;
+                else { messageIds.add(item.messageId); responseMessageId = item.messageId; responseOutput = ''; }
+              }
+              responseOutput += item.text;
+            }
+          }
+        }
         // Do not persist thoughts or tool payloads; the native harness owns its full history.
-        if (item.type === 'text_delta' && item.stream !== 'thought') event({ type: 'text_delta', text: item.text });
+        if (item.type === 'text_delta' && item.stream !== 'thought') event({ type: 'text_delta', text: item.text, ...(item.messageId ? { messageId: item.messageId } : {}) });
         else if (item.type === 'tool_call') event({ type: 'tool_call', title: item.title, status: item.status, kind: item.kind });
         else if (item.type === 'status') event({ type: 'status', text: item.text });
       }
@@ -80,18 +97,19 @@ export async function runWorker(stateDir, id, requestId) {
     try { await runtime?.shutdown(); } catch (error) { failure ||= error; }
     execution ||= { status: 'failed', error: { code: failure?.code || 'RUNNER_FAILED', message: failure?.message || 'No settled result.' } };
     if (failure) execution = { status: 'failed', error: { code: failure.code || 'RUNNER_FAILED', message: failure.message } };
-    const result = classify(output, execution);
+    if (!framedOutput || !responseMessageId) { responseOutput = output; responseMessageId = null; }
+    const result = classify(responseOutput, execution);
     if (execution.status === 'failed' && promptDispatched) result.state = 'unknown';
     if (permissionBlocked && result.state !== 'cancelled' && result.state !== 'unknown') {
       result.state = 'needs_input';
       result.response = { status: 'needs_input', question: 'A native tool permission request was denied. Review the recorded request and authorization before continuing; this CLI cannot approve a suspended dialog.' };
     }
-    patch({ ...result, execution, output, runnerDone: true, error: execution.error || null, heartbeatAt: timestamp() });
+    patch({ ...result, execution, output, responseOutput, responseMessageId, runnerDone: true, error: execution.error || null, heartbeatAt: timestamp() });
     event({ type: 'turn_settled', execution, taskState: result.state });
     try { fs.unlinkSync(cancelPath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   runWorker(...process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });
 }

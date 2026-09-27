@@ -1,6 +1,6 @@
 # CLI contract
 
-Version 0.1.0 is a local, terminal-first supervisor. Node 22+ and existing native Codex/Claude logins are required. Dependencies are pinned to the trial versions. No Grok/X capability is claimed.
+Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required. Dependencies are pinned to the trial versions. No Grok/X capability is claimed.
 
 ## Setup
 
@@ -20,7 +20,7 @@ The installer creates a wrapper at `~/.local/bin/agent-orchestrator`, refuses co
 | `start --harness NAME --prompt-file FILE --criteria TEXT --scope TEXT` | Record a task and start an asynchronous runner; returns worker/request IDs before task completion |
 | `status [ID]` | Compact worker summaries with identity, task state, heartbeat/progress, and blockers; reconcile missing/stale runner into unknown |
 | `events ID --after N --limit N` | Sequenced page with nextCursor; limit 1–1000, default 100 |
-| `result ID` | Current raw output, response, execution settlement, task state, acceptance, reconciliation, and prior-turn history |
+| `result ID` | Current full text transcript, validated response text, response, execution settlement, task state, acceptance, reconciliation, and prior-turn history |
 | `reply ID --prompt-file FILE` | New request in the same native session; prior result saved in record history |
 | `reply ID --prompt-file FILE --correction` | One explicitly requested formatting correction per task, only from invalid_output; ordinary reply cannot bypass it |
 | `cancel ID` | Write request-scoped cancellation marker, including for a live unknown runner; poll for settlement |
@@ -75,11 +75,11 @@ Config is trusted code execution through argv, not a sandbox. Do not put credent
 
 ## Persistence and recovery
 
-State defaults to `~/.local/state/agent-orchestrator`; use `--state-dir` for isolated runs. Records and event files have private permissions and atomic replacement with per-worker locks. Every worker has a small detached runner; ACPX owns its adapter and native session. No service, port, or dashboard is installed.
+State defaults to `~/.local/state/agent-orchestrator`; use `--state-dir` for isolated runs. Existing state directories must be real private directories (no group/other permissions); insecure directories are rejected without changing their permissions. Records and event files have private permissions and atomic replacement with per-worker locks. Every worker has a small detached runner; ACPX owns its adapter and native session. No service, port, or dashboard is installed.
 
 Replies require the original native record and session ID. Failed resume does not silently substitute a new session. Cancel markers are request-scoped and the runner polls them. Closing a terminal or reading results does not cancel work. Native histories may be created and model quota consumed by starts/replies.
 
-Missing runners or heartbeat expiry (45 seconds) produce unknown outcome. Disconnection/backend-uncertainty errors and any failed execution after confirmed prompt dispatch also produce unknown. The heartbeat is not evidence that model work is progressing. Unknown work cannot be replied to until explicitly reconciled with its current request ID; a still-live unknown runner can receive a cancellation request; no PID is killed from a saved record. There is no arbitrary process-kill command. Stale lock files require manual inspection; do not remove a lock while a writer is active.
+Missing runners or heartbeat expiry (45 seconds) produce unknown outcome. Disconnection/backend-uncertainty errors and any failed execution after confirmed prompt dispatch also produce unknown. The heartbeat is not evidence that model work is progressing. Unknown work cannot be replied to until explicitly reconciled with its current request ID; a still-live unknown runner can receive a cancellation request; no PID is killed from a saved record. There is no arbitrary process-kill command. Runner writes wait up to two seconds for transient lock contention; ordinary CLI writes still report contention immediately. Stale lock files require manual inspection; do not remove a lock while a writer is active.
 
 Atomic writes protect process-level consistency, not power-loss durability: no fsync guarantee is made. Event files are retained and rewritten on append; this is suitable for the bounded pilot, not unbounded streams. State, prompts, results, and native histories can contain task data. Reconciliation notes are bound to request IDs and archived on follow-up. The supervisor omits thought chunks and raw tool payloads from its event archive, but cannot guarantee model text is secret-free.
 
@@ -90,3 +90,8 @@ Native Auto/Auto-review remains enabled; the ACP client denies permission callba
 ## Verification
 
 `make test` runs syntax checks, ledger tests, and subprocess/ACP integration checks. Fixtures verify protocol behavior without paid calls; they do not establish native adapter parity. The live verification report separately records the bounded Codex/Claude checks and remaining gaps.
+
+
+### Response framing
+
+`result.output` retains the full non-thought text transcript. `responseOutput` is the text subjected to strict JSON validation; `responseMessageId` identifies its producer message when available. For Codex only, distinct non-interleaved message IDs allow progress messages to remain auditable while validating the last message. Missing, blank, or interleaved IDs fall back to validating the whole stream. Prose within the final message is still invalid; JSON is never extracted from arbitrary text. Message IDs are framing hints, not permission or authenticity evidence. Replies archive these fields with the prior request.
