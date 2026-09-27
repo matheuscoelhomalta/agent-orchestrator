@@ -1,5 +1,7 @@
 # Handoff — 2026-09-26
 
+> **Historical.** Research-stage handoff from 2026-09-26. The CLI it describes as unbuilt now exists; see the README's current documents for present behavior. Later sections are dated updates.
+
 ## Current state
 
 The user first asked for GitHub solutions for cross-harness agent orchestration, requested deeper investigation with orchestrate-agents, asked about ACP and Herdr, and then asked for an interview to clarify motivation. The established direction is a lean harness-agnostic solution used through native terminal agents, with better monitoring and response handling.

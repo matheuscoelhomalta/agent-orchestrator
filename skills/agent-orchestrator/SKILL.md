@@ -20,11 +20,11 @@ agent-orchestrator --json start --harness codex --cwd /path/to/repo --prompt-fil
 
 Set worker timeouts that fit the overall task budget, leaving time for native startup, review, and settlement. Keep worker verification within the assigned files and acceptance criteria; unrelated concurrent artifacts are not a reason to broaden the task.
 
-Save every returned worker ID and request ID. Prevent concurrent writers from owning the same files. Codex and Claude are included; custom harness entries require trusted argv configuration and verified capability support. Do not promise Grok/X support through this CLI.
+Save every returned worker ID and request ID. Prevent concurrent writers from owning the same files. Codex and Claude are included, plus Antigravity (`agy`) when installed; agy runs under its native permission setting, which may auto-approve every tool, so verify its scope yourself; custom harness entries require trusted argv configuration and verified capability support. Do not promise Grok/X support through this CLI.
 
 ## Monitor all workers
 
-Run `agent-orchestrator --json status` after dispatch and whenever returning from independent work. Repeat bounded status and event checks while any worker remains `starting`, `running`, or `cancelling`; do not end supervision after a single check. Inspect every active worker with bounded event pages, preserving `nextCursor` for the next read:
+Run `agent-orchestrator --json status` after dispatch and whenever returning from independent work. To block until workers settle, use `agent-orchestrator --json wait ID... --timeout 600`; `settled: false` means some are still running. Repeat bounded wait, status, and event checks while any worker remains `starting`, `running`, or `cancelling`; do not end supervision after a single check. Inspect every active worker with bounded event pages, preserving `nextCursor` for the next read:
 
 ```sh
 agent-orchestrator --json events WORKER_ID --after 0 --limit 100

@@ -1,5 +1,7 @@
 # ACPX coverage audit — 2026-09-26
 
+> **Historical.** Pre-implementation audit. The pending scope choice below was resolved as option A (minimal CLI plus coordinator skill), which is now implemented.
+
 ## Conclusion
 
 ACPX covers native execution/session management. A thin supervisor is justified primarily by durable task accounting and acceptance, not missing process orchestration. A coordinator skill can direct manual accounting, but a skill alone does not automatically maintain a durable task ledger.

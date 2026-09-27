@@ -12,6 +12,7 @@ import { main } from '../src/cli.mjs';
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixture-agent.mjs', import.meta.url));
+const agyFixture = fileURLToPath(new URL('./fixture-agy.mjs', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const active = new Set(['starting', 'running', 'cancelling']);
 async function setup(t, harness = 'fixture') {
@@ -207,6 +208,13 @@ test('Codex message framing keeps progress auditable and validates only unambigu
 });
 
 
+test('unknown harness names fail clearly before creating a worker', async t => {
+  const h = await setup(t);
+  await assert.rejects(h.run('start', '--harness', 'missing', '--config', h.config, '--cwd', h.cwd, '--prompt-file', h.prompt('CASE:complete'), '--criteria', 'x', '--scope', 'x'),
+    e => e.response.error.code === 'INVALID_INPUT' && /Unknown harness missing; configured: fixture/.test(e.response.error.message));
+  assert.equal(fs.existsSync(path.join(h.state, 'records')) ? fs.readdirSync(path.join(h.state, 'records')).length : 0, 0);
+});
+
 test('explicit blank objectives fail before creating a worker', async t => {
   const h = await setup(t);
   for (const objective of ['', '   ']) await assert.rejects(h.start('CASE:complete', '--objective', objective), e => e.response.error.code === 'INVALID_INPUT');
@@ -244,4 +252,63 @@ test('CLI and worker entrypoints work from a path with URL punctuation', async t
   const { stdout } = await exec(process.execPath, [alternate, 'start', '--harness', 'fixture', '--config', h.config, '--cwd', h.cwd, '--prompt-file', h.prompt('CASE:complete'), '--criteria', 'completion', '--scope', h.cwd, '--state-dir', h.state, '--json']);
   const started = JSON.parse(stdout).data;
   assert.equal((await h.poll(started.id)).state, 'needs_review');
+});
+
+async function agySetup(t) {
+  const h = await setup(t, 'agy');
+  fs.writeFileSync(h.config, JSON.stringify({ agy: { protocol: 'agy-print', command: [process.execPath, agyFixture], model: 'fixture-model', effort: 'low', effortKey: 'effort', mode: 'native' } }));
+  const calls = () => fs.readFileSync(path.join(h.cwd, 'agy-calls.ndjson'), 'utf8').trim().split('\n').map(x => JSON.parse(x).args);
+  return { ...h, calls };
+}
+
+test('agy headless turns validate the final answer and resume the same conversation', async t => {
+  const h = await agySetup(t); const first = await h.start('CASE:input'); const waiting = await h.poll(first.id);
+  assert.equal(waiting.state, 'needs_input'); assert.equal(waiting.admission, 'dispatched'); assert.equal(waiting.configuration.mode, 'always-proceed');
+  const result = await h.run('result', first.id); assert.match(result.output, /^Inspecting fixture\./); assert.equal(result.responseOutput, JSON.stringify({ status: 'needs_input', question: 'Which fixture choice?' }));
+  await h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete choice A')); const done = await h.poll(first.id);
+  assert.equal(done.state, 'needs_review'); assert.equal(done.nativeSessionId, waiting.nativeSessionId);
+  const [start, reply] = h.calls();
+  assert.equal(start.includes('--conversation'), false); assert.equal(reply[reply.indexOf('--conversation') + 1], waiting.nativeSessionId);
+  assert.deepEqual([reply[reply.indexOf('--model') + 1], reply[reply.indexOf('--effort') + 1]], ['fixture-model', 'low']);
+});
+
+test('agy denied actions, invalid output, and cancellation map to task states', async t => {
+  const h = await agySetup(t);
+  const [denied, malformed, long] = await Promise.all(['CASE:denied', 'CASE:malformed', 'CASE:long'].map(x => h.start(x)));
+  const blocked = await h.poll(denied.id); assert.equal(blocked.state, 'needs_input');
+  assert.ok((await h.run('events', denied.id)).events.some(x => x.type === 'permission_denied' && x.title === 'RunCommand'));
+  assert.equal((await h.poll(malformed.id)).state, 'invalid_output');
+  await h.poll(long.id, r => r.state === 'running' && r.admission === 'dispatched'); await h.run('cancel', long.id);
+  assert.equal((await h.poll(long.id)).state, 'cancelled');
+});
+
+test('agy failure without tool activity is failed; with tool activity it is unknown', async t => {
+  const h = await agySetup(t); const first = await h.start('CASE:fail'); const failed = await h.poll(first.id);
+  assert.equal(failed.state, 'failed'); assert.equal(failed.admission, 'dispatched'); assert.equal(failed.error.code, 'AGY_FAILED'); assert.match(failed.error.message, /backend unavailable/);
+  fs.rmSync(path.join(h.cwd, `conversation-${failed.nativeSessionId}`));
+  await h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')); const resumed = await h.poll(first.id);
+  assert.equal(resumed.state, 'failed'); assert.equal(resumed.nativeSessionId, failed.nativeSessionId);
+  assert.equal(fs.readdirSync(h.cwd).filter(x => x.startsWith('conversation-')).length, 0);
+  const second = await h.start('CASE:toolfail'); const uncertain = await h.poll(second.id);
+  assert.equal(uncertain.state, 'unknown'); assert.equal(uncertain.adapterPid, null);
+});
+
+test('resolve refuses while an orphaned agy process still runs', async t => {
+  const h = await agySetup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, r => r.state === 'running' && r.adapterPid && r.nativeSessionId);
+  process.kill(running.runnerPid, 'SIGKILL'); const unknown = await h.poll(first.id);
+  assert.equal(unknown.state, 'unknown');
+  await assert.rejects(h.run('resolve', first.id, '--request', unknown.requestId, '--note', 'x'), e => /adapter process/.test(e.response.error.message));
+  process.kill(running.adapterPid, 'SIGKILL'); await sleep(200);
+  assert.equal((await h.run('resolve', first.id, '--request', unknown.requestId, '--note', 'orphan stopped; fixture unchanged')).state, 'failed');
+});
+
+test('wait returns once the given workers settle, or reports it timed out', async t => {
+  const h = await setup(t); const [done, long] = await Promise.all([h.start('CASE:complete'), h.start('CASE:long')]);
+  const settled = await h.run('wait', done.id, '--timeout', '20'); assert.equal(settled.settled, true); assert.equal(settled.workers[0].state, 'needs_review');
+  const pending = await h.run('wait', done.id, long.id, '--timeout', '1'); assert.equal(pending.settled, false); assert.equal(pending.workers.length, 2);
+});
+
+test('agy partial output after its print timeout is a timeout, not a completed turn', async t => {
+  const h = await agySetup(t); const first = await h.start('CASE:timeout'); const done = await h.poll(first.id);
+  assert.equal(done.state, 'failed'); assert.equal(done.error.code, 'TIMEOUT');
 });

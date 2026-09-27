@@ -13,6 +13,7 @@ const help = `agent-orchestrator — task supervision over ACPX
   doctor                         Inspect adapters/config without model calls
   start --harness NAME --prompt-file FILE --criteria TEXT --scope TEXT
   status [ID]                    List workers or reconcile one worker
+  wait [ID...] [--timeout N]     Block until those (or all) workers stop running; default 300s
   events ID [--after N] [--limit N]   Read a bounded event page
   result ID                      Read output, execution outcome, and task state
   reply ID --prompt-file FILE [--correction]   Continue the same native session
@@ -60,7 +61,7 @@ export async function main(argv = process.argv.slice(2)) {
   const { values: flags, positionals } = parseArgs({ args: argv, options, allowPositionals: true, strict: true });
   if (flags.help || !positionals.length) { console.log(help); return; }
   const [command, id, ...extra] = positionals;
-  if (extra.length || (!['status','doctor','start'].includes(command) && !id)) throw fail('INVALID_INPUT', 'Unexpected or missing arguments; use --help.');
+  if ((extra.length && command !== 'wait') || (!['status','doctor','start','wait'].includes(command) && !id)) throw fail('INVALID_INPUT', 'Unexpected or missing arguments; use --help.');
   const stateDir = path.resolve(flags['state-dir'] || defaultStateDir());
   if (command === 'doctor') {
     const harnesses = Object.entries(readConfig(flags.config)).map(([name, spec]) => {
@@ -75,7 +76,9 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === 'start') {
     if (id) throw fail('INVALID_INPUT', 'start takes flags, not an ID.');
     const harness = required(flags.harness, '--harness');
-    const spec = readConfig(flags.config)[harness];
+    const config = readConfig(flags.config);
+    if (!Object.hasOwn(config, harness)) throw fail('INVALID_INPUT', `Unknown harness ${harness}; configured: ${Object.keys(config).join(', ')}.`);
+    const spec = config[harness];
     validateSpec(spec);
     const prompt = required(fs.readFileSync(required(flags['prompt-file'], '--prompt-file'), 'utf8'), 'Prompt');
     const cwd = fs.realpathSync(flags.cwd || process.cwd());
@@ -86,6 +89,16 @@ export async function main(argv = process.argv.slice(2)) {
       createdAt: timestamp(), updatedAt: timestamp() };
     store.create(record);
     return summarize(await launch(store, record, stateDir));
+  }
+  if (command === 'wait') {
+    const ids = positionals.slice(1);
+    const deadline = Date.now() + number(flags.timeout, 300, 1, 3600) * 1000;
+    for (;;) {
+      const workers = (ids.length ? ids : store.list().map(x => x.id)).map(x => summarize(reconcile(store, x)));
+      const settled = !workers.some(x => activeStates.has(x.state));
+      if (settled || Date.now() >= deadline) return { settled, workers };
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
   if (command === 'status') return id ? summarize(reconcile(store, id)) : store.list().map(x => summarize(reconcile(store, x.id)));
   const record = reconcile(store, id);
@@ -109,6 +122,7 @@ export async function main(argv = process.argv.slice(2)) {
     return summarize(store.update(id, current => {
       if (current.state !== 'unknown' || current.requestId !== flags.request) throw fail('INVALID_STATE', 'Only the specified current unknown request can be resolved.');
       if (alive(current.runnerPid)) throw fail('INVALID_STATE', 'Runner still exists; inspect or cancel it before resolving.');
+      if (alive(current.adapterPid)) throw fail('INVALID_STATE', `Native adapter process ${current.adapterPid} still exists; stop it before resolving.`);
       return { ...current, state: 'failed', runnerDone: true, resolution: { requestId: current.requestId, note: flags.note, at: timestamp() }, updatedAt: timestamp() };
     }));
   }
@@ -122,7 +136,7 @@ export async function main(argv = process.argv.slice(2)) {
       const previous = { requestId: current.requestId, state: current.state, execution: current.execution, response: current.response, output: current.output, responseOutput: current.responseOutput, responseMessageId: current.responseMessageId, acceptance: current.acceptance, error: current.error, resolution: current.resolution };
       return { ...current, state: 'starting', requestId: randomUUID(), prompt: flags.correction ? `Correct only the response format. Do not redo task work or use tools. ${prompt}` : prompt,
         history: [...(current.history || []), previous],
-        turn: current.turn + 1, corrections: current.corrections + (flags.correction ? 1 : 0), runnerPid: null, runnerDone: false, admission: 'not_confirmed', heartbeatAt: timestamp(), updatedAt: timestamp(),
+        turn: current.turn + 1, corrections: current.corrections + (flags.correction ? 1 : 0), runnerPid: null, adapterPid: null, runnerDone: false, admission: 'not_confirmed', heartbeatAt: timestamp(), updatedAt: timestamp(),
         output: '', responseOutput: '', responseMessageId: null, response: null, execution: null, error: null, acceptance: null, resolution: null };
     });
     return summarize(await launch(store, next, stateDir));

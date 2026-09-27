@@ -1,6 +1,6 @@
 # Agent Orchestrator
 
-A lean local CLI for delegating work to native Codex and Claude harnesses, monitoring workers, preserving session context, and recording verified task acceptance. ACPX handles native execution; a small per-turn runner and private task ledger handle supervision. Ghostty remains your terminal interface.
+A lean local CLI for delegating work to native Codex, Claude, and Antigravity (`agy`) harnesses, monitoring workers, preserving session context, and recording verified task acceptance. ACPX handles Codex/Claude execution and documented `agy --print` headless mode handles Antigravity; a small per-turn runner and private task ledger handle supervision. Ghostty remains your terminal interface.
 
 ## Use
 
@@ -24,23 +24,20 @@ Completion JSON becomes `needs_review`; only explicit verified acceptance marks 
 
 ## Project record
 
-- [Project brief](docs/PROJECT-BRIEF.md): motivations and requirements.
-- [Research](docs/RESEARCH.md): ACP, ACPX, Herdr, and alternatives.
-- [Original architecture candidate](docs/ARCHITECTURE.md): pre-implementation proposal and open choices.
-- [ACPX coverage audit](docs/ACPX-GAP-AUDIT.md): execution coverage and task-accounting gaps.
-- [Verification criteria](docs/VERIFICATION-PLAN.md): required behavior checks.
-- [Handoff](docs/HANDOFF.md): research-stage context; implementation update appended below it.
-- [Original live trial report](docs/ACPX-TRIAL-REPORT.md): earlier embedded-runtime trial results and limitations.
-- [Implementation verification](docs/IMPLEMENTATION-VERIFICATION.md): completed CLI and live pilot evidence.
-- [Post-review live test](docs/POST-REVIEW-LIVE-TEST.md): concurrent runs, questions, cancellation and acceptance.
-- [Native recovery](docs/NATIVE-RECOVERY-CHECK.md): streamed cancellation and explicit runner-loss recovery.
-- [Native permission denial](docs/NATIVE-PERMISSION-CHECK.md): actual Claude Write denial and blocker handling.
-- [Adoption check](docs/ADOPTION-CHECK.md): skill installation and a real coordinator-led review.
-- [Grok harness check](docs/GROK-HARNESS-CHECK.md): native protocol, model and X-search findings; CLI compatibility limits.
-- [Published baseline and supervision](docs/BASELINE-REVIEW-AND-SUPERVISION.md): confirmed fixes and a native two-harness monitoring pilot; nested launch boundary.
-- [Triple review](docs/TRIPLE-REVIEW.md): independent findings, confirmed fixes, and regression checks.
+Current behavior:
+
+- [CLI contract](docs/CLI.md): commands, harnesses (including Antigravity), permissions, persistence, and limits.
+- [Daily workflow](docs/DAILY-WORKFLOW.md) and [coordinator skill](skills/agent-orchestrator/SKILL.md): how a main agent delegates and supervises.
+- [Multi-harness test and coordinator pilot](docs/MULTI-HARNESS-TEST-2026-09-27.md): latest live results across Codex, Claude, Antigravity, OpenCode, and Grok.
+- [Live CLI test](docs/LIVE-CLI-TEST-2026-09-27.md): same-day independent Codex/Claude/Grok check.
+- [Project brief](docs/PROJECT-BRIEF.md): motivations, desired outcome, and adoption criteria.
+
+Dated evidence and history (superseded where they conflict with the documents above):
+
+- [Research](docs/RESEARCH.md), [original architecture candidate](docs/ARCHITECTURE.md), [ACPX coverage audit](docs/ACPX-GAP-AUDIT.md), [verification criteria](docs/VERIFICATION-PLAN.md), [handoff](docs/HANDOFF.md), and the [original live trial](docs/ACPX-TRIAL-REPORT.md): pre-implementation research and decisions.
+- [Implementation verification](docs/IMPLEMENTATION-VERIFICATION.md), [post-review live test](docs/POST-REVIEW-LIVE-TEST.md), [native recovery](docs/NATIVE-RECOVERY-CHECK.md), [native permission denial](docs/NATIVE-PERMISSION-CHECK.md), [adoption check](docs/ADOPTION-CHECK.md), [Grok harness check](docs/GROK-HARNESS-CHECK.md), [published baseline and supervision](docs/BASELINE-REVIEW-AND-SUPERVISION.md), and [triple review](docs/TRIPLE-REVIEW.md): bounded checks of earlier versions.
 - [Evidence archive](evidence/acpx-trial/README.md): original artifacts and dependency versions.
 
-`make test` runs syntax checks and meaningful ledger/CLI integration tests. Fixtures test ACP behavior; bounded native checks separately verify one Claude permission denial and Codex recovery. Grok is not included in the CLI defaults; see its harness check for the exact compatibility boundary. No dashboard or unattended crash-proof service is included.
+`make test` runs syntax checks and meaningful ledger/CLI integration tests. Fixtures test ACP and agy headless behavior without paid calls; dated native checks record live behavior separately. Grok is not included in the CLI defaults; see its harness check for the exact compatibility boundary. No dashboard or unattended crash-proof service is included.
 
 Private runtime state and evidence archives remain local and are excluded from version control. The reports retain the bounded findings; do not publish native session stores as test artifacts.

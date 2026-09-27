@@ -1,6 +1,6 @@
 # CLI contract
 
-Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required. Dependencies are pinned to the trial versions. No Grok/X capability is claimed.
+Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required; an Antigravity login is needed only when `agy` is installed and used. Dependencies are pinned to the trial versions. No Grok/X capability is claimed.
 
 ## Setup
 
@@ -19,6 +19,7 @@ The installer creates a wrapper at `~/.local/bin/agent-orchestrator`, refuses co
 | `doctor` | Static dependency/configuration/native-command checks; no model call and no authentication verification |
 | `start --harness NAME --prompt-file FILE --criteria TEXT --scope TEXT` | Record a task and start an asynchronous runner; returns worker/request IDs before task completion |
 | `status [ID]` | Compact worker summaries with identity, task state, heartbeat/progress, and blockers; reconcile missing/stale runner into unknown |
+| `wait [ID...] [--timeout N]` | Block until those workers (or all) leave starting/running/cancelling, reconciling each second; returns `settled` false at the timeout (1–3600 seconds, default 300) |
 | `events ID --after N --limit N` | Sequenced page with nextCursor; limit 1–1000, default 100 |
 | `result ID` | Current full text transcript, validated response text, response, execution settlement, task state, acceptance, reconciliation, and prior-turn history |
 | `reply ID --prompt-file FILE` | New request in the same native session; prior result saved in record history |
@@ -65,6 +66,18 @@ Completed JSON becomes needs_review. Only an explicit accept command with the cu
 
 Defaults preserve the previous delegation conventions: Codex gpt-5.6-sol/high in agent Auto-review mode; Claude claude-opus-5-5/medium in auto mode. Configuration is applied via ACPX before the task prompt and verified from accepted mode/status responses. Claude's advertised `opus` alias is accepted only as the explicitly configured canonical alias. Changing versions or providers may require configuration changes and fresh verification.
 
+### Antigravity (`agy`)
+
+Antigravity has no ACP mode. The `agy` harness (`protocol: "agy-print"`) runs the unmodified, logged-in CLI through its documented headless interface: `agy --print PROMPT --output-format stream-json --model MODEL --effort EFFORT --print-timeout Ns`, adding `--conversation ID` for replies. Google's separate `agy_acp_server` connector and Antigravity OAuth tokens are deliberately not used; Antigravity's terms prohibit third-party access to the service, and this documented CLI path is the lower-risk option. The default is `gemini-3.8-flash-medium`/medium. The harness is offered only when an `agy` executable is on PATH. It is spawned without a shell, so shell aliases (such as one adding `--dangerously-skip-permissions`) never apply, and that flag is rejected in configured commands.
+
+- Permissions come from the user's native `toolPermission` setting; no per-run override exists. The reported mode is recorded as `configuration.mode` but not enforced, by explicit user choice: under `always-proceed`, agy acts without any check the CLI can see. Under `request-review`, refused actions arrive as `denied_actions` and the task becomes needs_input; agy commonly tries shell verification commands, so otherwise complete turns may stop there.
+- Model and effort are passed as flags but not reported back, so they are recorded as requested, not verified.
+- The final `result.response` is validated; streamed progress text remains in `output`.
+- The prompt is passed in argv, so dispatch is recorded when the process starts, and its PID is kept as `adapterPid` until it exits.
+- agy reports its own print timeout as SUCCESS with partial output and a stderr notice; the CLI records a TIMEOUT failure. Cancellation sends SIGINT, escalates to SIGKILL after 5 seconds, and settles as cancelled, including a cancel requested while the process is starting.
+- Refused actions produce needs_input only when the turn otherwise settles; a failed turn with a refused action is unknown.
+- A reply whose `--conversation` fails or returns a different conversation ID fails without substituting a new conversation.
+
 A custom config file is a harness-name-to-spec map:
 
 ```json
@@ -79,7 +92,7 @@ State defaults to `~/.local/state/agent-orchestrator`; use `--state-dir` for iso
 
 Replies require the original native record and session ID. Failed resume does not silently substitute a new session. Cancel markers are request-scoped and the runner polls them. Closing a terminal or reading results does not cancel work. Native histories may be created and model quota consumed by starts/replies.
 
-Missing runners or heartbeat expiry (45 seconds) produce unknown outcome. Disconnection/backend-uncertainty errors and any failed execution after confirmed prompt dispatch also produce unknown. The heartbeat is not evidence that model work is progressing. Unknown work cannot be replied to until explicitly reconciled with its current request ID; a still-live unknown runner can receive a cancellation request; no PID is killed from a saved record. There is no arbitrary process-kill command. Runner writes wait up to two seconds for transient lock contention; ordinary CLI writes still report contention immediately. Stale lock files require manual inspection; do not remove a lock while a writer is active.
+Missing runners or heartbeat expiry (45 seconds) produce unknown outcome. Disconnection/backend-uncertainty errors also produce unknown, as does a failed execution (including a timeout) after confirmed prompt dispatch when the turn recorded any tool call or permission request. A dispatched turn that failed with no tool activity settles as failed and can be replied to directly; this relies on the harness reporting its tool calls. The heartbeat is not evidence that model work is progressing. Unknown work cannot be replied to until explicitly reconciled with its current request ID; a still-live unknown runner can receive a cancellation request; resolve is refused while the recorded runner or native adapter process (`adapterPid`) still exists; no PID is killed from a saved record. There is no arbitrary process-kill command. Runner writes wait up to two seconds for transient lock contention; ordinary CLI writes still report contention immediately. Stale lock files require manual inspection; do not remove a lock while a writer is active.
 
 Atomic writes protect process-level consistency, not power-loss durability: no fsync guarantee is made. Event files are retained and rewritten on append; this is suitable for the bounded pilot, not unbounded streams. State, prompts, results, and native histories can contain task data. Reconciliation notes are bound to request IDs and archived on follow-up. The supervisor omits thought chunks and raw tool payloads from its event archive, but cannot guarantee model text is secret-free.
 
@@ -89,7 +102,7 @@ Native Auto/Auto-review remains enabled; the ACP client denies permission callba
 
 ## Verification
 
-`make test` runs syntax checks, ledger tests, and subprocess/ACP integration checks. Fixtures verify protocol behavior without paid calls; they do not establish native adapter parity. The live verification report separately records the bounded Codex/Claude checks and remaining gaps.
+`make test` runs syntax checks, ledger tests, and subprocess/ACP integration checks. Fixtures verify protocol behavior without paid calls; they do not establish native adapter parity. The live verification report separately records the bounded Codex/Claude/agy checks and remaining gaps.
 
 
 ### Response framing

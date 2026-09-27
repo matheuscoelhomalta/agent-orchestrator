@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAcpRuntime, createFileSessionStore, createAgentRegistry } from 'acpx/runtime';
 import { Store } from './store.mjs';
+import { agyTurn } from './agy.mjs';
 import { classify, configure, taskPrompt, timestamp } from './core.mjs';
 
 export async function runWorker(stateDir, id, requestId) {
@@ -10,12 +11,13 @@ export async function runWorker(stateDir, id, requestId) {
   let record = store.get(id);
   if (record.requestId !== requestId || record.state !== 'starting') return;
   let runtime, turn, timer;
-  let output = '', execution, failure, permissionBlocked = false, promptDispatched = false;
-  let responseOutput = '', responseMessageId, framedOutput = record.harness === 'codex';
+  let output = '', execution, failure, permissionBlocked = false, promptDispatched = false, toolActivity = false;
+  let responseOutput = '', responseMessageId, framedOutput = record.harness === 'codex', finalResponse;
   const messageIds = new Set();
   const patch = changes => store.update(id, current => current.requestId === requestId && ['starting', 'running', 'cancelling', 'unknown'].includes(current.state) ? { ...current, ...changes, updatedAt: timestamp() } : current);
   const event = value => {
     const entry = store.appendEvent(id, { requestId, at: timestamp(), ...value });
+    if (['tool_call', 'permission_denied'].includes(value.type)) toolActivity = true;
     if (['text_delta', 'tool_call', 'status'].includes(value.type)) patch({ lastProgressAt: entry.at, lastEventSeq: entry.seq });
     return entry;
   };
@@ -34,6 +36,28 @@ export async function runWorker(stateDir, id, requestId) {
       try { patch({ heartbeatAt: timestamp() }); } catch (error) { failure = error; }
       checkCancel().catch(error => { failure = error; });
     }, 500);
+    if (record.spec.protocol === 'agy-print') {
+      await checkCancel();
+      if (cancelling) { execution = { status: 'cancelled' }; return; }
+      turn = await agyTurn({ record, text: taskPrompt(record, record.prompt), timeoutMs: record.timeoutMs, event,
+        onInit: ({ conversationId, permissionMode }) => {
+          // Model and effort are passed as flags but not reported back; only the permission mode is observable.
+          const configuration = { requestedModel: record.spec.model, effort: record.spec.effort, mode: permissionMode ?? null };
+          patch({ nativeSessionId: conversationId, configuration });
+          event({ type: 'configuration_reported', ...configuration });
+        },
+        onSpawned: pid => { promptDispatched = true; patch({ adapterPid: pid, admission: 'dispatched' }); event({ type: 'adapter_spawned', pid }); event({ type: 'prompt_dispatched' }); },
+        onExited: ({ pid, code, signal }) => { patch({ adapterPid: null }); event({ type: 'adapter_exited', pid, code, signal }); },
+        onText: text => { output += text; event({ type: 'text_delta', text }); } });
+      patch({ state: 'running', heartbeatAt: timestamp() });
+      // A cancel seen while the process was spawning found no turn to signal.
+      if (cancelling) await turn.cancel(); else await checkCancel();
+      const settled = await turn.result;
+      execution = settled.execution;
+      finalResponse = settled.response;
+      for (const action of settled.deniedActions) { permissionBlocked = true; event({ type: 'permission_denied', title: typeof action === 'string' ? action : action?.display_name ?? action?.action ?? JSON.stringify(action) }); }
+      return;
+    }
     runtime = createAcpRuntime({
       cwd: record.cwd,
       agentRegistry: createAgentRegistry({ overrides: { [record.harness]: record.spec.command } }),
@@ -47,8 +71,8 @@ export async function runWorker(stateDir, id, requestId) {
         return { outcome: 'reject_once' };
       },
       processLifecycle: {
-        onSpawned: info => event({ type: 'adapter_spawned', pid: info.pid, launchId: info.launchId }),
-        onExit: info => { try { event({ type: 'adapter_exited', pid: info.pid, launchId: info.launchId }); } catch {} },
+        onSpawned: info => { patch({ adapterPid: info.pid }); event({ type: 'adapter_spawned', pid: info.pid, launchId: info.launchId }); },
+        onExit: info => { try { patch({ adapterPid: null }); event({ type: 'adapter_exited', pid: info.pid, launchId: info.launchId }); } catch {} },
       },
     });
     if (record.nativeSessionId && !await runtime.findSession({ sessionKey: id, agent: record.harness })) throw Object.assign(new Error('Native runtime record missing; refusing a fresh session.'), { code: 'SESSION_RESUME_REQUIRED' });
@@ -97,9 +121,12 @@ export async function runWorker(stateDir, id, requestId) {
     try { await runtime?.shutdown(); } catch (error) { failure ||= error; }
     execution ||= { status: 'failed', error: { code: failure?.code || 'RUNNER_FAILED', message: failure?.message || 'No settled result.' } };
     if (failure) execution = { status: 'failed', error: { code: failure.code || 'RUNNER_FAILED', message: failure.message } };
-    if (!framedOutput || !responseMessageId) { responseOutput = output; responseMessageId = null; }
+    // agy reports its final answer separately from progress text, like Codex's framed final message.
+    if (finalResponse !== undefined) { responseOutput = finalResponse; responseMessageId = null; }
+    else if (!framedOutput || !responseMessageId) { responseOutput = output; responseMessageId = null; }
     const result = classify(responseOutput, execution);
-    if (execution.status === 'failed' && promptDispatched) result.state = 'unknown';
+    // Side effects need tools. A dispatched turn that failed without any tool activity cannot have changed anything.
+    if (execution.status === 'failed' && promptDispatched && toolActivity) result.state = 'unknown';
     if (permissionBlocked && result.state !== 'cancelled' && result.state !== 'unknown') {
       result.state = 'needs_input';
       result.response = { status: 'needs_input', question: 'A native tool permission request was denied. Review the recorded request and authorization before continuing; this CLI cannot approve a suspended dialog.' };

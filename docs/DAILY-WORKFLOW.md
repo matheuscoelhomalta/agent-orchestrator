@@ -14,7 +14,7 @@ agent-orchestrator --json events WORKER_ID --after 0 --limit 100
 agent-orchestrator --json result WORKER_ID
 ```
 
-Repeat status and bounded event reads while work is outstanding. Carry `nextCursor` into the next `--after`; an empty page is not completion. Heartbeats indicate a live observer, not model progress. Account for every worker before ending the overall task.
+Use `agent-orchestrator --json wait WORKER_ID... --timeout 600` to block until workers settle, and repeat wait, status, and bounded event reads while work is outstanding. Carry `nextCursor` into the next `--after`; an empty page is not completion. Heartbeats indicate a live observer, not model progress. Account for every worker before ending the overall task.
 
 - `needs_input`: inspect the question or permission event. Answer only within existing authorization. Write a reply file and use `reply WORKER_ID --prompt-file FILE`; save the new request ID and resume monitoring. A denied permission is not approval to retry through a different tool.
 - `invalid_output`: inspect the raw output. Use one `reply WORKER_ID --prompt-file FILE --correction` asking only for corrected formatting, without tools or repeated task work. Further invalid output requires a reported blocker or a newly agreed approach.
@@ -26,4 +26,4 @@ State normally lives under `~/.local/state/agent-orchestrator`. For experiments,
 
 Both installed skill links point into this checkout. Moving or deleting it breaks those links and the installed CLI wrapper. Installation never replaces conflicting client entries. To install the same existing package on another local machine, verify the two client roots are real directories and target names are absent before linking the package; preserve any conflict.
 
-Codex and Claude are the current CLI defaults. Grok's native harness has a separate verification report; do not work around the CLI's permission-configuration check to enable it. The system is a bounded local supervisor with coordinator verification, not an unattended crash-proof service or an OS sandbox.
+Codex and Claude are the current CLI defaults, plus Antigravity (`agy`) when installed; see the CLI contract for agy permission limits. Grok's native harness has a separate verification report; do not work around the CLI's permission-configuration check to enable it. The system is a bounded local supervisor with coordinator verification, not an unattended crash-proof service or an OS sandbox.

@@ -27,6 +27,8 @@ export function defaults() {
   return {
     codex: { command: [process.execPath, path.join(modules, '@agentclientprotocol/codex-acp/dist/index.js')], model: 'gpt-5.6-sol', effort: 'high', effortKey: 'reasoning_effort', mode: 'agent', nativeCommand: 'codex', env: { ...(executable('codex') ? { CODEX_PATH: executable('codex') } : {}), INITIAL_AGENT_MODE: 'agent', NO_BROWSER: '1' } },
     claude: { command: [process.execPath, path.join(modules, '@agentclientprotocol/claude-agent-acp/dist/index.js')], model: 'claude-opus-5-5', modelAlias: 'opus', effort: 'medium', effortKey: 'effort', mode: 'auto', nativeCommand: 'claude', env: { ...(executable('claude') ? { CLAUDE_CODE_EXECUTABLE: executable('claude') } : {}) } },
+    // Optional: offered only when installed. Runs under the user's native toolPermission; always-proceed is accepted by explicit user choice.
+    ...(executable('agy') && { agy: { protocol: 'agy-print', command: [executable('agy')], model: 'gemini-3.8-flash-medium', effort: 'medium', effortKey: 'effort', mode: 'native', nativeCommand: 'agy' } }),
   };
 }
 
@@ -101,7 +103,7 @@ export function reconcile(store, id) {
 }
 
 export function summarize(record) {
-  const fields = ['id','requestId','harness','state','admission','nativeSessionId','configuration','turn','corrections','runnerPid','runnerDone','createdAt','updatedAt','heartbeatAt','lastProgressAt','lastEventSeq','error','acceptance','resolution'];
+  const fields = ['id','requestId','harness','state','admission','nativeSessionId','configuration','turn','corrections','runnerPid','adapterPid','runnerDone','createdAt','updatedAt','heartbeatAt','lastProgressAt','lastEventSeq','error','acceptance','resolution'];
   const result = Object.fromEntries(fields.filter(key => record[key] !== undefined).map(key => [key, record[key]]));
   if (record.response) result.response = { status: record.response.status, ...(record.response.question ? { question: record.response.question } : {}), ...(record.response.reason ? { reason: record.response.reason } : {}) };
   return result;
