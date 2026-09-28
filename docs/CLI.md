@@ -28,7 +28,7 @@ The installer creates a wrapper at `~/.local/bin/agent-orchestrator`, refuses co
 | `accept ID --request REQUEST --note TEXT` | Record coordinator verification of the current settled needs_review result |
 | `resolve ID --request REQUEST --note TEXT` | Record side-effect reconciliation of the specified unknown request and settle it as failed; runner must no longer exist |
 
-Common flags: `--state-dir DIR`, `--json`, `--help`. Start also takes `--cwd`, `--config`, `--objective`, and `--timeout` (1–3600 seconds, default 300). The timeout applies to the model turn; native initialization/load and owned cleanup can extend wall time. `--config` selects a trusted harness map at start; its snapshot is retained for subsequent replies.
+Common flags: `--state-dir DIR`, `--json`, `--help`. Start also takes `--cwd`, `--config`, `--objective`, `--strict`, and `--timeout` (1–3600 seconds, default 300). The timeout applies to the model turn; native initialization/load and owned cleanup can extend wall time. `--config` selects a trusted harness map at start; its snapshot is retained for subsequent replies.
 
 Machine-readable command output uses `{ "ok": true, "data": ... }`; failures under `--json` use `{ "ok": false, "error": { "code": "...", "message": "..." } }` on stdout and nonzero exit status. Without `--json`, data remains readable JSON and errors go to stderr. A failed doctor also returns top-level ok=false with error code DOCTOR_FAILED and its detailed check data. Empty configurations and nonexecutable commands are rejected or reported unhealthy. Help is plain text. A successful read can report a failed worker: command success and task success are distinct.
 
@@ -100,7 +100,7 @@ Atomic writes protect process-level consistency, not power-loss durability: no f
 
 Native Auto/Auto-review remains enabled; the ACP client denies permission callbacks it cannot authorize and surfaces them as needs_input. ACP filesystem/terminal callbacks are disabled. These settings are not an OS sandbox for native tools. Recognized native questions may fail before the permission callback and require a native client capable of handling them. The CLI does not approve a suspended native dialog or automatically broaden policy.
 
-Under the defaults, `--scope` is advisory: live tests showed Codex (Auto-review), Claude (auto), OpenCode (build), and agy (`always-proceed`) all writing outside the working directory when asked, with Codex's own reviewer approving the escalation. For tasks that need a hard boundary, use a `--config` file with these native settings, each verified live on 2026-09-27 (in-directory edit succeeded; a shell write to the home directory was blocked):
+Under the defaults, `--scope` is advisory: live tests showed Codex (Auto-review), Claude (auto), OpenCode (build), and agy (`always-proceed`) all writing outside the working directory when asked, with Codex's own reviewer approving the escalation. For tasks that need a hard boundary, `start --strict` applies these native settings to that worker (replies keep them); a `--config` file can set them too. Each was verified live on 2026-09-27 (in-directory edit succeeded; a shell write to the home directory was blocked). `--strict` fails for harnesses without verified settings:
 
 | Harness | Config change | Effect |
 |---|---|---|
@@ -108,7 +108,7 @@ Under the defaults, `--scope` is advisory: live tests showed Codex (Auto-review)
 | Claude | `"mode": "acceptEdits"` | Edits inside the working directory are automatic; other edits and most shell commands ask, and the CLI refuses (needs_input). Expect more stops. |
 | agy | append `"--sandbox"` to `command` | OS sandbox (Seatbelt on macOS) makes shell writes outside the workspace fail ("Operation not permitted"); agy reports the failure and continues. Google documents that network access is also off by default in this mode (not verified live). |
 
-These replace the default modes only for workers started with that config. Codex's `exclude_slash_tmp`/`exclude_tmpdir_env_var` cannot be set through codex-acp. This CLI cannot pass Claude `--settings` per worker, but claude-agent-acp loads the user, project, and local Claude settings files, so a `sandbox.enabled` setting there would reach workers (whether it activates the Bash sandbox under the adapter is untested).
+These replace the default modes only for workers started with that config. Codex's `exclude_slash_tmp`/`exclude_tmpdir_env_var` cannot be set through codex-acp. This CLI cannot pass Claude `--settings` per worker, but claude-agent-acp loads the user, project, and local Claude settings files, so a project `.claude/settings.json` with `{"sandbox":{"enabled":true,"allowUnsandboxedCommands":false}}` reaches workers: verified live on 2026-09-28 in default auto mode, a shell write to the home directory failed ("Operation not permitted") while the task completed without stops. It covers shell commands only (not Claude's Edit/Write tools), and it also applies to interactive Claude sessions in that repository.
 
 ## Verification
 

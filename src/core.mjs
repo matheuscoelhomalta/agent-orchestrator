@@ -32,6 +32,14 @@ export function defaults() {
   };
 }
 
+// Native settings verified live to block writes outside the working directory (docs/CLI.md, permission boundary).
+export function strict(harness, spec) {
+  if (spec.protocol === 'agy-print') return { ...spec, command: [...spec.command, '--sandbox'] };
+  if (harness === 'codex') return { ...spec, mode: 'read-only', env: { ...spec.env, INITIAL_AGENT_MODE: 'read-only' } };
+  if (harness === 'claude') return { ...spec, mode: 'acceptEdits' };
+  throw fail('INVALID_INPUT', `--strict has no verified settings for harness ${harness}.`);
+}
+
 export function readConfig(filename) {
   if (!filename) return defaults();
   const config = JSON.parse(fs.readFileSync(filename, 'utf8'));

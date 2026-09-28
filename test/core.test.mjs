@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { supportedNode, classify, configure, reconcile, validateSpec } from '../src/core.mjs';
+import { supportedNode, classify, configure, reconcile, validateSpec, strict } from '../src/core.mjs';
 import { main } from '../src/cli.mjs';
 import { Store } from '../src/store.mjs';
 
@@ -84,4 +84,13 @@ test('doctor checks every native executable override', async t => {
   fs.writeFileSync(config, JSON.stringify({ fixture: { command: [process.execPath], model: 'm', mode: 'default', effort: 'low', effortKey: 'effort', env: { CODEX_PATH: process.execPath, CLAUDE_CODE_EXECUTABLE: path.join(dir, 'missing') } } }));
   const result = await main(['doctor', '--config', config]);
   assert.equal(result.ok, false); assert.equal(result.harnesses[0].nativeOverridePresent, false);
+});
+
+test('strict settings map each built-in harness to its verified native boundary', () => {
+  const base = { command: ['x'], model: 'm', effort: 'e', effortKey: 'k', mode: 'agent', env: { NO_BROWSER: '1' } };
+  assert.deepEqual(strict('codex', base), { ...base, mode: 'read-only', env: { NO_BROWSER: '1', INITIAL_AGENT_MODE: 'read-only' } });
+  assert.equal(strict('claude', { ...base, mode: 'auto' }).mode, 'acceptEdits');
+  assert.deepEqual(strict('agy', { ...base, protocol: 'agy-print', command: ['/bin/agy'] }).command, ['/bin/agy', '--sandbox']);
+  for (const spec of [strict('codex', base), strict('claude', base)]) validateSpec(spec);
+  assert.throws(() => strict('opencode', base), /no verified settings/);
 });

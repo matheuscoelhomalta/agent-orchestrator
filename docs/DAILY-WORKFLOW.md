@@ -14,7 +14,7 @@ agent-orchestrator --json events WORKER_ID --after 0 --limit 100
 agent-orchestrator --json result WORKER_ID
 ```
 
-Use `agent-orchestrator --json wait WORKER_ID... --timeout 600` to block until workers settle, and repeat wait, status, and bounded event reads while work is outstanding. Carry `nextCursor` into the next `--after`; an empty page is not completion. Heartbeats indicate a live observer, not model progress. Account for every worker before ending the overall task.
+Add `--strict` to `start` for any task that edits files; it blocks writes outside `--cwd` with verified native settings. Use `agent-orchestrator --json wait WORKER_ID... --timeout 600` to block until workers settle, and repeat wait, status, and bounded event reads while work is outstanding. Carry `nextCursor` into the next `--after`; an empty page is not completion. Heartbeats indicate a live observer, not model progress. Account for every worker before ending the overall task.
 
 - `needs_input`: inspect the question or permission event. Answer only within existing authorization. Write a reply file and use `reply WORKER_ID --prompt-file FILE`; save the new request ID and resume monitoring. A denied permission is not approval to retry through a different tool.
 - `invalid_output`: inspect the raw output. Use one `reply WORKER_ID --prompt-file FILE --correction` asking only for corrected formatting, without tools or repeated task work. Further invalid output requires a reported blocker or a newly agreed approach.

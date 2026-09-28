@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Store } from './store.mjs';
-import { activeStates, defaultStateDir, fail, readConfig, reconcile, timestamp, validateSpec, alive, executable, summarize, supportedNode } from './core.mjs';
+import { activeStates, defaultStateDir, fail, readConfig, reconcile, timestamp, validateSpec, alive, executable, summarize, supportedNode, strict } from './core.mjs';
 
 const help = `agent-orchestrator — task supervision over ACPX
 
@@ -23,13 +23,14 @@ const help = `agent-orchestrator — task supervision over ACPX
 
 Common: --state-dir DIR, --json, --help
 Start: --cwd DIR, --config FILE, --objective TEXT, --timeout SECONDS (default 300)
+       --strict  use the harness's verified native settings that block writes outside --cwd
 Reply: --correction consumes the one allowed formatting-correction attempt
 Results remain needs_review until accept; valid JSON alone never accepts a task.
 Config is trusted executable argv; credentials come from native harness login.
 `;
 
 const options = Object.fromEntries(['state-dir','harness','prompt-file','criteria','scope','cwd','config','objective','timeout','after','limit','request','note'].map(name => [name, { type: 'string' }]));
-for (const name of ['json','help','correction']) options[name] = { type: 'boolean' };
+for (const name of ['json','help','correction','strict']) options[name] = { type: 'boolean' };
 
 function number(value, fallback, min, max) {
   const parsed = value === undefined ? fallback : Number(value);
@@ -78,7 +79,7 @@ export async function main(argv = process.argv.slice(2)) {
     const harness = required(flags.harness, '--harness');
     const config = readConfig(flags.config);
     if (!Object.hasOwn(config, harness)) throw fail('INVALID_INPUT', `Unknown harness ${harness}; configured: ${Object.keys(config).join(', ')}.`);
-    const spec = config[harness];
+    const spec = flags.strict ? strict(harness, config[harness]) : config[harness];
     validateSpec(spec);
     const prompt = required(fs.readFileSync(required(flags['prompt-file'], '--prompt-file'), 'utf8'), 'Prompt');
     const cwd = fs.realpathSync(flags.cwd || process.cwd());

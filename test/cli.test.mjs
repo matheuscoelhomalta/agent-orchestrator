@@ -324,3 +324,13 @@ test('agy started-but-unfinished tools keep a crash unknown, and a switched conv
   assert.equal((await h.poll(crash.id)).state, 'unknown');
   const failed = await h.poll(switched.id); assert.equal(failed.state, 'failed'); assert.equal(failed.error.code, 'SESSION_ID_CHANGED');
 });
+
+test('--strict applies verified native settings and keeps them for replies', async t => {
+  const h = await setup(t, 'claude'); const first = await h.start('CASE:complete', '--strict'); const done = await h.poll(first.id);
+  assert.equal(done.configuration.mode, 'acceptEdits');
+  await h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')); assert.equal((await h.poll(first.id)).configuration.mode, 'acceptEdits');
+  const a = await agySetup(t); const agy = await a.start('CASE:complete', '--strict'); await a.poll(agy.id);
+  assert.ok(a.calls()[0].includes('--sandbox'));
+  const plain = await setup(t);
+  await assert.rejects(plain.start('CASE:complete', '--strict'), e => /no verified settings for harness fixture/.test(e.response.error.message));
+});

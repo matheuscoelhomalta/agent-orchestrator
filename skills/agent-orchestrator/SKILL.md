@@ -16,6 +16,7 @@ Define each worker's objective, authorized scope, and concrete acceptance criter
 
 ```sh
 agent-orchestrator --json start --harness codex --cwd /path/to/repo --prompt-file /path/to/task.txt --criteria 'Describe evidence that proves completion' --scope 'Read-only inspection of src/auth'
+agent-orchestrator --json start --strict --harness claude --cwd /path/to/repo --prompt-file /path/to/fix.txt --criteria 'Named check passes' --scope 'Edit src/auth only'
 ```
 
 Set worker timeouts that fit the overall task budget, leaving time for native startup, review, and settlement. Keep worker verification within the assigned files and acceptance criteria; unrelated concurrent artifacts are not a reason to broaden the task.
@@ -28,7 +29,7 @@ Route by strength, then verify everything. Provisional guidance from the 2026-09
 - Simple scoped edits: any harness.
 - X/Twitter search: unavailable through this CLI (Grok is not supported).
 
-When a task needs a hard write boundary rather than an advisory `--scope`, start the worker with the strict `--config` settings documented in the CLI contract's permission section.
+`--scope` alone is advisory. Start every worker whose task edits files with `--strict`, which blocks writes outside `--cwd` using verified native settings (Claude will stop more often for shell approval). Read-only reviews may use the defaults. If `--strict` is rejected for a harness, use Codex or Claude for that editing task.
 
 Save every returned worker ID and request ID. Prevent concurrent writers from owning the same files. Codex and Claude are included, plus Antigravity (`agy`) when installed; agy runs under its native permission setting, which may auto-approve every tool, so verify its scope yourself; custom harness entries require trusted argv configuration and verified capability support. Do not promise Grok/X support through this CLI.
 
