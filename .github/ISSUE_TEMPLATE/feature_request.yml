@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose a focused improvement.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user workflow and what is currently missing.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives
+      description: Explain any effect on permissions, compatibility, or supported harnesses.
+    validations:
+      required: true

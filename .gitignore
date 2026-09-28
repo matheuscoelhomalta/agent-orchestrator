@@ -6,3 +6,9 @@ node_modules/
 evidence/
 
 __pycache__/
+
+# Local credentials and documentation build output.
+.env
+.env.*
+_site/
+.jekyll-cache/

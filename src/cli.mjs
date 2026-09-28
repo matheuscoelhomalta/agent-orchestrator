@@ -23,7 +23,7 @@ const help = `agent-orchestrator — task supervision over ACPX
 
 Common: --state-dir DIR, --json, --help
 Start: --cwd DIR, --config FILE, --objective TEXT, --timeout SECONDS (default 300)
-       --strict  use the harness's verified native settings that block writes outside --cwd
+       --strict  apply native write restrictions; limits vary by harness (see docs/CLI.md)
 Reply: --correction consumes the one allowed formatting-correction attempt
 Results remain needs_review until accept; valid JSON alone never accepts a task.
 Config is trusted executable argv; credentials come from native harness login.

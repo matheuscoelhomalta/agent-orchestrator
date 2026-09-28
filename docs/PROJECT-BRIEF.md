@@ -2,18 +2,18 @@
 
 ## Motivation
 
-The user wants reliable orchestration between agents from different harnesses. The central problem is that the main agent does not monitor subagents well: it loses track of progress, mishandles blockers, fails to follow through, or receives badly formatted or otherwise unsuitable responses.
+Coordinating coding agents across native harnesses requires more than launching processes. A coordinator needs to track progress, handle blockers, preserve session context, and verify whether a result actually satisfies the task.
 
-Different agents offer different perceived strengths. The user cited Claude for design, Grok for X access, and GPT for strong models. These are routing motivations, not benchmark findings. Grok's X search works in its native harness but cannot run through this CLI (see the [CLI contract](CLI.md#other-harnesses)); the [coordinator skill](../skills/agent-orchestrator/SKILL.md) holds the evidence-based routing guidance.
+Different agents can contribute different findings. The [coordinator skill](../skills/agent-orchestrator/SKILL.md) records provisional routing guidance from bounded local pilots, not a general benchmark. Supported integrations and their limits are documented in the [CLI contract](CLI.md#other-harnesses).
 
 ## Established direction
 
 - Harness-agnostic orchestration where practical.
-- Native terminal workflow; the user mainly uses agents through Ghostty.
+- Native terminal workflow, including Ghostty or another terminal.
 - Lean scope focused on orchestration and monitoring.
 - A main agent coordinates specialists and handles routine recovery, while material decisions and authorization boundaries reach the user.
-- Prefer an existing suitable option; the user is willing to build a dedicated tool if necessary.
-- Investigate deeply before committing to an implementation.
+- Reuse existing execution infrastructure and keep supervision small.
+- Verify native behavior before advertising compatibility.
 
 Ghostty is the terminal interface. It does not need to become the orchestration backend. A common protocol can hide many harness differences, but individual capabilities, permissions, configuration, and resume semantics still need verification.
 
@@ -41,11 +41,4 @@ ACP (Agent Client Protocol) standardizes client-to-harness communication: sessio
 
 [ACPX](https://github.com/openclaw/acpx) supplies the execution layer through its embedded persistent runtime, with the [codex-acp](https://github.com/agentclientprotocol/codex-acp) and [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) adapters. The embedded runtime enforces same-session-only resume, and it lets the CLI set and verify model, effort, and permission mode before any task prompt is dispatched. ACPX's shared runtime was not used because its controls require an already-running owner, normally started by prompt submission. This CLI adds only what ACPX lacks: durable task accounting, response validation, bounded correction, acceptance, and unknown-outcome handling.
 
-Alternatives inspected in September 2026 did not fit this direction:
-
-| Candidate | Finding |
-|---|---|
-| [Herdr](https://github.com/herdrdev/herdr) | Owns interactive PTY terminals and detects state from hooks and screen rules rather than structured turn results |
-| agent-deck | tmux/SQLite monitoring; an unset Claude `dangerous_mode` defaulted to true |
-| backnotprop/orchestrator | Auto-accepted Codex approvals and used yolo behavior for Copilot |
-| mco-org/mco | Replays history into fresh native calls instead of continuing the original session |
+This project focuses on structured turn results and native session continuation. It does not provide an interactive terminal manager, a dashboard, or unattended long-running scheduling. Broader tool comparisons require a fresh review of the specific versions and configurations being compared.

@@ -1,0 +1,27 @@
+name: Bug report
+description: Report a reproducible problem with the supervisor.
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use the repository's private security reporting form. Remove credentials, private prompts, session IDs, and personal paths from public reports."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, project revision, and relevant adapter/native CLI versions.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal commands and synthetic input that reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected and actual behavior
+      description: Include sanitized error codes and whether a worker might still be running.
+    validations:
+      required: true

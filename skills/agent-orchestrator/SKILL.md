@@ -30,7 +30,7 @@ Route by strength, then verify everything. Provisional guidance from the 2026-09
 - Simple scoped edits: any harness.
 - X/Twitter search: unavailable through this CLI (Grok is not supported).
 
-`--scope` alone is advisory. Start every worker whose task edits files with `--strict`, which blocks writes outside `--cwd` using verified native settings (Claude will stop more often for shell approval). Read-only reviews may use the defaults. If `--strict` is rejected for a harness, use Codex or Claude for that editing task.
+`--scope` alone is advisory. Start every worker whose task edits files with `--strict`, which applies the harness's verified native write restrictions. Limits differ: Codex still permits temporary-directory writes, and Claude will stop more often for shell approval. See the [permission boundary](../../docs/CLI.md#permission-boundary); this flag is not a universal filesystem sandbox. Read-only reviews may use the defaults, but a read-only prompt does not enforce read-only access. If `--strict` is rejected for a harness, use Codex or Claude for that editing task.
 
 Save every returned worker ID and request ID. Prevent concurrent writers from owning the same files. Codex and Claude are included, plus Antigravity (`agy`) when installed; agy runs under its native permission setting, which may auto-approve every tool, so verify its scope yourself; custom harness entries require trusted argv configuration and verified capability support. Do not promise Grok/X support through this CLI.
 

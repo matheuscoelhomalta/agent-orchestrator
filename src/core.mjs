@@ -33,7 +33,7 @@ function defaults() {
   };
 }
 
-// Native settings verified live to block writes outside the working directory (docs/CLI.md, permission boundary).
+// Native restrictions and harness-specific exceptions are documented in docs/CLI.md.
 export function strict(harness, spec) {
   if (spec.protocol === 'agy-print') return { ...spec, command: [...spec.command, '--sandbox'] };
   if (harness === 'codex') return { ...spec, mode: 'read-only', env: { ...spec.env, INITIAL_AGENT_MODE: 'read-only' } };

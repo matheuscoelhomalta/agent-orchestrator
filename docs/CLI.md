@@ -1,6 +1,6 @@
 # CLI contract
 
-Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required; an Antigravity login is needed only when `agy` is installed and used. Dependencies are pinned: ACPX 0.19.3, codex-acp 1.13.1, and claude-agent-acp 0.81.2. No Grok/X capability is claimed.
+Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required for the default configuration; an Antigravity login is needed only when `agy` is installed and used. Dependencies are pinned: ACPX 0.19.3, codex-acp 1.13.1, and claude-agent-acp 0.81.2. No Grok/X capability is claimed. See [getting started](GETTING-STARTED.md) for installation prerequisites, supported environments, and account/model availability limits.
 
 ## Setup
 
@@ -76,7 +76,7 @@ Defaults: Codex gpt-5.6-sol/high in agent Auto-review mode; Claude claude-opus-5
 
 ### Antigravity (`agy`)
 
-Antigravity has no ACP mode. The `agy` harness (`protocol: "agy-print"`) runs the unmodified, logged-in CLI through its documented headless interface: `agy --print PROMPT --output-format stream-json --model MODEL --effort EFFORT --print-timeout Ns`, adding `--conversation ID` for replies. Google's separate `agy_acp_server` connector and Antigravity OAuth tokens are deliberately not used; Antigravity's terms prohibit third-party access to the service, and this documented CLI path is the lower-risk option. The default is `gemini-3.8-flash-medium`/medium. The harness is offered only when an `agy` executable is on PATH. It is spawned without a shell, so shell aliases (such as one adding `--dangerously-skip-permissions`) never apply, and that flag is rejected in configured commands.
+The `agy` harness (`protocol: "agy-print"`) runs the unmodified, logged-in CLI through its headless interface: `agy --print PROMPT --output-format stream-json --model MODEL --effort EFFORT --print-timeout Ns`, adding `--conversation ID` for replies. Google's separate `agy_acp_server` connector and Antigravity OAuth tokens are deliberately not used. This does not establish provider authorization: review the [Antigravity terms considerations](../THIRD-PARTY.md#antigravity-integration) before use. The default is `gemini-3.8-flash-medium`/medium. The harness is offered only when an `agy` executable is on PATH. It is spawned without a shell, so shell aliases (such as one adding `--dangerously-skip-permissions`) never apply, and that flag is rejected in configured commands.
 
 - Permissions come from the user's native `toolPermission` setting; no per-run override exists. The reported mode is recorded as `configuration.mode` but not enforced, by explicit user choice: under `always-proceed`, agy acts without any check the CLI can see. Under `request-review`, refused actions arrive as `denied_actions` and the task becomes needs_input; agy commonly tries shell verification commands, so otherwise complete turns may stop there.
 - Model and effort are passed as flags but not reported back, so they are recorded as requested, not verified.
@@ -114,7 +114,7 @@ Atomic writes protect process-level consistency, not power-loss durability: no f
 
 Native Auto/Auto-review remains enabled; the ACP client denies permission callbacks it cannot authorize and surfaces them as needs_input. A turn the harness ends as cancelled after such a refusal (Codex does this) also settles as needs_input; only a coordinator `cancel` produces cancelled. ACP filesystem/terminal callbacks are disabled. These settings are not an OS sandbox for native tools. Recognized native questions may fail before the permission callback and require a native client capable of handling them. The CLI does not approve a suspended native dialog or automatically broaden policy.
 
-Under the defaults, `--scope` is advisory: live tests showed Codex (Auto-review), Claude (auto), OpenCode (build), and agy (`always-proceed`) all writing outside the working directory when asked, with Codex's own reviewer approving the escalation. For tasks that need a hard boundary, `start --strict` applies these native settings to that worker (replies keep them); a `--config` file can set them too. Each was verified live on 2026-09-27 (in-directory edit succeeded; a shell write to the home directory was blocked). `--strict` fails for harnesses without verified settings:
+Under the defaults, `--scope` is advisory: live tests showed Codex (Auto-review), Claude (auto), OpenCode (build), and agy (`always-proceed`) all writing outside the working directory when asked, with Codex's own reviewer approving the escalation. For tasks that need tighter native restrictions, `start --strict` applies these settings to that worker (replies keep them); a `--config` file can set them too. Each was verified live on 2026-09-27 (in-directory edit succeeded; a shell write to the home directory was blocked). These checks do not prove that every outside path is inaccessible. `--strict` fails for harnesses without verified settings:
 
 | Harness | Config change | Effect |
 |---|---|---|
