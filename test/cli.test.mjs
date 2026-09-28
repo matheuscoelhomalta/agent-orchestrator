@@ -133,7 +133,8 @@ test('a live runner with an unknown outcome can still be cancelled', async t => 
   const h = await setup(t);
   const first = await h.start('CASE:long', '--timeout', '10');
   await h.poll(first.id, dispatched);
-  new Store(h.state).update(first.id, current => ({ ...current, state: 'unknown' }));
+  // Test setup can overlap the live runner's heartbeat write.
+  new Store(h.state, { lockWaitMs: 2000 }).update(first.id, current => ({ ...current, state: 'unknown' }));
   try {
     assert.equal((await h.run('cancel', first.id)).cancellationRequested, true);
     assert.equal((await h.poll(first.id, r => r.runnerDone === true)).state, 'cancelled');
