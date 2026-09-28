@@ -239,13 +239,22 @@ test('explicit blank objectives fail before creating a worker', async t => {
   assert.equal((await h.poll(started.id)).state, 'needs_review');
 });
 
-test('runner tolerates lock contention across heartbeat and cancellation', async t => {
+test('runner tolerates lock contention across heartbeat and cancellation', { timeout: 30000 }, async t => {
   const h = await setup(t); const started = await h.start('CASE:long');
   await h.poll(started.id, dispatched);
   const moduleURL = new URL('../src/store.mjs', import.meta.url).href;
-  const holder = spawn(process.execPath, ['--input-type=module', '-e', `import { Store } from ${JSON.stringify(moduleURL)}; const store = new Store(${JSON.stringify(h.state)}); store.update(${JSON.stringify(started.id)}, current => { console.log('locked'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 900); return current; });`]);
-  await new Promise((resolve, reject) => { holder.stdout.once('data', resolve); holder.once('error', reject); });
-  const exited = new Promise((resolve, reject) => { holder.once('exit', code => code === 0 ? resolve() : reject(new Error('lock holder failed'))); });
+  const holder = spawn(process.execPath, ['--input-type=module', '-e', `import { Store } from ${JSON.stringify(moduleURL)}; const store = new Store(${JSON.stringify(h.state)}, { lockWaitMs: 2000 }); store.update(${JSON.stringify(started.id)}, current => { console.log('locked'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 900); return current; });`]);
+  let stderr = '';
+  holder.stderr.on('data', chunk => { stderr += chunk; });
+  const exited = new Promise((resolve, reject) => {
+    holder.once('error', reject);
+    holder.once('close', code => code === 0 ? resolve() : reject(new Error(`lock holder failed (${code}): ${stderr}`)));
+  });
+  // A helper that exits before readiness must fail the test instead of waiting forever.
+  await Promise.race([
+    new Promise(resolve => holder.stdout.once('data', resolve)),
+    exited.then(() => { throw new Error('lock holder exited before announcing readiness'); }),
+  ]);
   await h.run('cancel', started.id);
   await exited;
   const done = await h.poll(started.id); assert.equal(done.state, 'cancelled');
