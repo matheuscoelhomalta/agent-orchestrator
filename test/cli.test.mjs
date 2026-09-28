@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
 import { main } from '../src/cli.mjs';
-import { activeStates, cancelMarkerPath } from '../src/core.mjs';
+import { activeStates, alive, cancelMarkerPath } from '../src/core.mjs';
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
@@ -18,6 +18,15 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const invalidState = e => e.response.error.code === 'INVALID_STATE';
 const dispatched = r => r.state === 'running' && r.admission === 'dispatched';
 const promptCount = (cwd, sessionId) => fs.readFileSync(path.join(cwd, `prompts-${sessionId}.ndjson`), 'utf8').trim().split('\n').length;
+async function killFixtureRunner(state, record) {
+  process.kill(record.runnerPid, 'SIGKILL');
+  const deadline = Date.now() + 5000;
+  while (alive(record.runnerPid) && Date.now() < deadline) await sleep(20);
+  assert.equal(alive(record.runnerPid), false, 'Fixture runner must exit before lock recovery');
+  // SIGKILL can interrupt a ledger write. This fixture's sole writer is now dead;
+  // model the documented manual recovery without changing production lock handling.
+  fs.rmSync(path.join(state, 'locks', `${record.id}.lock`), { force: true });
+}
 async function setup(t, harness = 'fixture') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-cli-test-'));
   const state = path.join(root, 'state');
@@ -99,7 +108,7 @@ test('a turn the harness cancels after a refused permission is needs_input, not 
 
 test('abrupt runner loss is unknown and blocks blind resubmission', async t => {
   const h = await setup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, dispatched);
-  process.kill(running.runnerPid, 'SIGKILL'); const unknown = await h.poll(first.id); assert.equal(unknown.state, 'unknown'); assert.equal(unknown.error.code, 'RUNNER_OUTCOME_UNKNOWN');
+  await killFixtureRunner(h.state, running); const unknown = await h.poll(first.id); assert.equal(unknown.state, 'unknown'); assert.equal(unknown.error.code, 'RUNNER_OUTCOME_UNKNOWN');
   await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')), invalidState);
   assert.equal(promptCount(h.cwd, running.nativeSessionId), 1);
 });
@@ -321,10 +330,10 @@ test('agy failure without tool activity is failed; with tool activity it is unkn
 
 test('resolve refuses while an orphaned agy process still runs', async t => {
   const h = await agySetup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, r => r.state === 'running' && r.adapterPid && r.nativeSessionId);
-  process.kill(running.runnerPid, 'SIGKILL'); const unknown = await h.poll(first.id);
+  await killFixtureRunner(h.state, running); const unknown = await h.poll(first.id);
   assert.equal(unknown.state, 'unknown');
   await assert.rejects(h.run('resolve', first.id, '--request', unknown.requestId, '--note', 'x'), e => /adapter process/.test(e.response.error.message));
-  process.kill(running.adapterPid, 'SIGKILL'); await sleep(200);
+  process.kill(running.adapterPid, 'SIGKILL'); await h.poll(first.id, r => !alive(r.adapterPid));
   assert.equal((await h.run('resolve', first.id, '--request', unknown.requestId, '--note', 'orphan stopped; fixture unchanged')).state, 'failed');
 });
 
