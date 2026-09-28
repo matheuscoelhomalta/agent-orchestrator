@@ -1,12 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { createAcpRuntime, createFileSessionStore, createAgentRegistry } from 'acpx/runtime';
 import { Store } from './store.mjs';
 import { agyTurn } from './agy.mjs';
-import { classify, configure, taskPrompt, timestamp } from './core.mjs';
+import { activeStates, fail, classify, configure, taskPrompt, timestamp, cancelMarkerPath } from './core.mjs';
 
-export async function runWorker(stateDir, id, requestId) {
+async function runWorker(stateDir, id, requestId) {
   const store = new Store(stateDir, { lockWaitMs: 2000 });
   let record = store.get(id);
   if (record.requestId !== requestId || record.state !== 'starting') return;
@@ -14,7 +13,7 @@ export async function runWorker(stateDir, id, requestId) {
   let output = '', execution, failure, permissionBlocked = false, promptDispatched = false, toolActivity = false;
   let responseOutput = '', responseMessageId, framedOutput = true, finalResponse;
   const messageIds = new Set();
-  const patch = changes => store.update(id, current => current.requestId === requestId && ['starting', 'running', 'cancelling', 'unknown'].includes(current.state) ? { ...current, ...changes, updatedAt: timestamp() } : current);
+  const patch = changes => store.update(id, current => current.requestId === requestId && (activeStates.has(current.state) || current.state === 'unknown') ? { ...current, ...changes, updatedAt: timestamp() } : current);
   const event = value => {
     // Set before persisting: a failed write must not hide that a tool started.
     if (['tool_call', 'permission_denied'].includes(value.type)) toolActivity = true;
@@ -22,7 +21,7 @@ export async function runWorker(stateDir, id, requestId) {
     if (['text_delta', 'tool_call', 'status'].includes(value.type)) patch({ lastProgressAt: entry.at, lastEventSeq: entry.seq });
     return entry;
   };
-  const cancelPath = path.join(stateDir, 'cancel', `${id}-${requestId}.json`);
+  const cancelPath = cancelMarkerPath(stateDir, id, requestId);
   let cancelling = false;
   const checkCancel = async () => {
     if (cancelling || !fs.existsSync(cancelPath)) return;
@@ -40,7 +39,7 @@ export async function runWorker(stateDir, id, requestId) {
     if (record.spec.protocol === 'agy-print') {
       await checkCancel();
       if (cancelling) { execution = { status: 'cancelled' }; return; }
-      turn = await agyTurn({ record, text: taskPrompt(record, record.prompt), timeoutMs: record.timeoutMs, event,
+      turn = await agyTurn({ record, text: taskPrompt(record), event,
         onInit: ({ conversationId, permissionMode }) => {
           // Model and effort are passed as flags but not reported back; only the permission mode is observable.
           const configuration = { requestedModel: record.spec.model, effort: record.spec.effort, mode: permissionMode ?? null };
@@ -76,16 +75,16 @@ export async function runWorker(stateDir, id, requestId) {
         onExit: info => { try { patch({ adapterPid: null }); event({ type: 'adapter_exited', pid: info.pid, launchId: info.launchId }); } catch {} },
       },
     });
-    if (record.nativeSessionId && !await runtime.findSession({ sessionKey: id, agent: record.harness })) throw Object.assign(new Error('Native runtime record missing; refusing a fresh session.'), { code: 'SESSION_RESUME_REQUIRED' });
+    if (record.nativeSessionId && !await runtime.findSession({ sessionKey: id, agent: record.harness })) throw fail('SESSION_RESUME_REQUIRED', 'Native runtime record missing; refusing a fresh session.');
     const handle = await runtime.ensureSession({ sessionKey: id, agent: record.harness, mode: 'persistent', cwd: record.cwd });
-    if (record.nativeSessionId && handle.backendSessionId !== record.nativeSessionId) throw Object.assign(new Error('Native session identity changed; no prompt dispatched.'), { code: 'SESSION_ID_CHANGED' });
+    if (record.nativeSessionId && handle.backendSessionId !== record.nativeSessionId) throw fail('SESSION_ID_CHANGED', 'Native session identity changed; no prompt dispatched.');
     patch({ nativeSessionId: handle.backendSessionId, handle });
     const verified = await configure(runtime, handle, record.spec);
     patch({ configuration: verified });
     event({ type: 'configuration_verified', ...verified });
     await checkCancel();
     if (cancelling) { execution = { status: 'cancelled' }; return; }
-    turn = runtime.startTurn({ handle, text: taskPrompt(record, record.prompt), mode: 'prompt', requestId, timeoutMs: record.timeoutMs });
+    turn = runtime.startTurn({ handle, text: taskPrompt(record), mode: 'prompt', requestId, timeoutMs: record.timeoutMs });
     patch({ state: 'running', heartbeatAt: timestamp() });
     const dispatched = turn.promptStarted.then(() => { promptDispatched = true; patch({ admission: 'dispatched' }); event({ type: 'prompt_dispatched' }); }, error => event({ type: 'prompt_not_confirmed', code: error.code }));
     const consumption = (async () => {
@@ -94,20 +93,16 @@ export async function runWorker(stateDir, id, requestId) {
           output += item.text;
           // Codex and Claude emit progress notes and the final answer as separate producer messages.
           // Missing or interleaved IDs leave the whole stream subject to validation.
+          if (framedOutput && (typeof item.messageId !== 'string' || !item.messageId.trim() || (item.messageId !== responseMessageId && messageIds.has(item.messageId)))) framedOutput = false;
           if (framedOutput) {
-            if (typeof item.messageId !== 'string' || !item.messageId.trim()) framedOutput = false;
-            else {
-              if (item.messageId !== responseMessageId) {
-                if (messageIds.has(item.messageId)) framedOutput = false;
-                else { messageIds.add(item.messageId); responseMessageId = item.messageId; responseOutput = ''; }
-              }
-              responseOutput += item.text;
-            }
+            if (item.messageId !== responseMessageId) { messageIds.add(item.messageId); responseMessageId = item.messageId; responseOutput = ''; }
+            responseOutput += item.text;
           }
+          event({ type: 'text_delta', text: item.text, ...(item.messageId ? { messageId: item.messageId } : {}) });
+          continue;
         }
         // Do not persist thoughts or tool payloads; the native harness owns its full history.
-        if (item.type === 'text_delta' && item.stream !== 'thought') event({ type: 'text_delta', text: item.text, ...(item.messageId ? { messageId: item.messageId } : {}) });
-        else if (item.type === 'tool_call') event({ type: 'tool_call', title: item.title, status: item.status, kind: item.kind });
+        if (item.type === 'tool_call') event({ type: 'tool_call', title: item.title, status: item.status, kind: item.kind });
         else if (item.type === 'status') event({ type: 'status', text: item.text });
       }
     })();
@@ -120,8 +115,8 @@ export async function runWorker(stateDir, id, requestId) {
   } finally {
     clearInterval(timer);
     try { await runtime?.shutdown(); } catch (error) { failure ||= error; }
-    execution ||= { status: 'failed', error: { code: failure?.code || 'RUNNER_FAILED', message: failure?.message || 'No settled result.' } };
     if (failure) execution = { status: 'failed', error: { code: failure.code || 'RUNNER_FAILED', message: failure.message } };
+    else execution ||= { status: 'failed', error: { code: 'RUNNER_FAILED', message: 'No settled result.' } };
     // agy reports its final answer separately from progress text, like a framed ACP final message.
     if (finalResponse !== undefined) { responseOutput = finalResponse; responseMessageId = null; }
     else if (!framedOutput || !responseMessageId) { responseOutput = output; responseMessageId = null; }
@@ -139,6 +134,4 @@ export async function runWorker(stateDir, id, requestId) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
-  runWorker(...process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });
-}
+runWorker(...process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });

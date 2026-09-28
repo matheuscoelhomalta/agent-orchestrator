@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
+import { fail } from './core.mjs';
 
 // Antigravity has no ACP mode; its documented headless interface is `--print --output-format stream-json`.
 // Each turn is one process. `--conversation` resumes the native conversation.
-export async function agyTurn({ record, text, timeoutMs, event, onSpawned, onExited, onInit, onText }) {
-  const { spec } = record;
+export async function agyTurn({ record, text, event, onSpawned, onExited, onInit, onText }) {
+  const { spec, timeoutMs } = record;
   const args = [...spec.command.slice(1), '--print', text, '--output-format', 'stream-json', '--model', spec.model, '--effort', spec.effort, '--print-timeout', `${Math.ceil(timeoutMs / 1000)}s`];
   if (record.nativeSessionId) args.push('--conversation', record.nativeSessionId);
   const child = spawn(spec.command[0], args, { cwd: record.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -15,7 +16,7 @@ export async function agyTurn({ record, text, timeoutMs, event, onSpawned, onExi
   // The prompt travels in argv, so it is delivered once the process exists.
   try { onSpawned(child.pid); } catch (error) { child.kill('SIGKILL'); throw error; }
   // Backstop for a CLI that ignores its own --print-timeout.
-  const guard = setTimeout(() => { failure ||= Object.assign(new Error(`Timed out after ${timeoutMs}ms`), { code: 'TIMEOUT' }); child.kill('SIGKILL'); }, timeoutMs + 15000);
+  const guard = setTimeout(() => { failure ||= fail('TIMEOUT', `Timed out after ${timeoutMs}ms`); child.kill('SIGKILL'); }, timeoutMs + 15000);
   child.stderr.on('data', chunk => {
     stderr += chunk;
     timeoutNotice ||= /\[agy\] print timeout[^\n]*/.exec(stderr)?.[0];
@@ -26,7 +27,7 @@ export async function agyTurn({ record, text, timeoutMs, event, onSpawned, onExi
     if (!conversationId) return true;
     const expected = session || record.nativeSessionId;
     if (expected && conversationId !== expected) {
-      failure = Object.assign(new Error('Native conversation identity changed.'), { code: 'SESSION_ID_CHANGED' });
+      failure = fail('SESSION_ID_CHANGED', 'Native conversation identity changed.');
       child.kill('SIGKILL');
       return false;
     }

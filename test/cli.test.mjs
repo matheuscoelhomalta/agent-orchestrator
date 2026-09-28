@@ -8,13 +8,16 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.mjs';
 import { main } from '../src/cli.mjs';
+import { activeStates, cancelMarkerPath } from '../src/core.mjs';
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
 const fixture = fileURLToPath(new URL('./fixture-agent.mjs', import.meta.url));
 const agyFixture = fileURLToPath(new URL('./fixture-agy.mjs', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const active = new Set(['starting', 'running', 'cancelling']);
+const invalidState = e => e.response.error.code === 'INVALID_STATE';
+const dispatched = r => r.state === 'running' && r.admission === 'dispatched';
+const promptCount = (cwd, sessionId) => fs.readFileSync(path.join(cwd, `prompts-${sessionId}.ndjson`), 'utf8').trim().split('\n').length;
 async function setup(t, harness = 'fixture') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-cli-test-'));
   const state = path.join(root, 'state');
@@ -28,7 +31,7 @@ async function setup(t, harness = 'fixture') {
     catch (error) { error.response = JSON.parse(error.stderr || error.stdout || '{}'); throw error; }
   };
   const start = (text, ...args) => run('start', '--harness', harness, '--config', config, '--cwd', cwd, '--prompt-file', prompt(text), '--criteria', 'Fixture protocol observed', '--scope', cwd, ...args);
-  const poll = async (id, predicate = r => !active.has(r.state)) => {
+  const poll = async (id, predicate = r => !activeStates.has(r.state)) => {
     const until = Date.now() + 20000;
     let record;
     while (Date.now() < until) { record = await run('status', id); if (predicate(record)) return record; await sleep(70); }
@@ -38,7 +41,7 @@ async function setup(t, harness = 'fixture') {
     if (fs.existsSync(path.join(state, 'records'))) {
       for (const filename of fs.readdirSync(path.join(state, 'records'))) {
         const record = JSON.parse(fs.readFileSync(path.join(state, 'records', filename)));
-        if (active.has(record.state)) { try { await run('cancel', record.id); await poll(record.id); } catch {} }
+        if (activeStates.has(record.state)) { try { await run('cancel', record.id); await poll(record.id); } catch {} }
       }
     }
     fs.rmSync(root, { recursive: true, force: true });
@@ -52,11 +55,11 @@ test('real CLI starts durably, reviews completion, accepts explicitly, and rejec
   assert.ok(fs.existsSync(path.join(h.state, 'records', `${started.id}.json`)));
   const done = await h.poll(started.id); assert.equal(done.state, 'needs_review');
   const result = await h.run('result', started.id); assert.equal(result.acceptance, null); assert.equal(result.execution.status, 'completed'); assert.ok(result.response.evidence.length);
-  await assert.rejects(h.run('accept', started.id, '--request', 'stale', '--note', 'checked'), e => e.response.error.code === 'INVALID_STATE');
+  await assert.rejects(h.run('accept', started.id, '--request', 'stale', '--note', 'checked'), invalidState);
   const accepted = await h.run('accept', started.id, '--request', done.requestId, '--note', 'Verified fixture evidence'); assert.equal(accepted.state, 'accepted');
   const next = await h.run('reply', started.id, '--prompt-file', h.prompt('CASE:complete followup')); const continued = await h.poll(next.id);
   assert.equal(continued.nativeSessionId, done.nativeSessionId); assert.notEqual(continued.requestId, done.requestId);
-  await assert.rejects(h.run('accept', started.id, '--request', done.requestId, '--note', 'old result'), e => e.response.error.code === 'INVALID_STATE');
+  await assert.rejects(h.run('accept', started.id, '--request', done.requestId, '--note', 'old result'), invalidState);
 });
 
 test('parallel tasks have isolated native sessions', async t => {
@@ -66,14 +69,14 @@ test('parallel tasks have isolated native sessions', async t => {
 
 test('invalid output allows only one format correction', async t => {
   const h = await setup(t); const first = await h.start('CASE:malformed'); const bad = await h.poll(first.id); assert.equal(bad.state, 'invalid_output');
-  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:malformed')), e => e.response.error.code === 'INVALID_STATE');
+  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:malformed')), invalidState);
   await h.run('reply', first.id, '--correction', '--prompt-file', h.prompt('CASE:malformed')); const again = await h.poll(first.id); assert.equal(again.state, 'invalid_output'); assert.equal(again.corrections, 1); assert.equal(again.nativeSessionId, bad.nativeSessionId);
-  await assert.rejects(h.run('reply', first.id, '--correction', '--prompt-file', h.prompt('CASE:complete')), e => e.response.error.code === 'INVALID_STATE');
-  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:malformed')), e => e.response.error.code === 'INVALID_STATE');
+  await assert.rejects(h.run('reply', first.id, '--correction', '--prompt-file', h.prompt('CASE:complete')), invalidState);
+  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:malformed')), invalidState);
 });
 
 test('active cancellation settles before same-session followup', async t => {
-  const h = await setup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, r => r.state === 'running' && r.admission === 'dispatched');
+  const h = await setup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, dispatched);
   const cancel = await h.run('cancel', first.id); assert.equal(cancel.cancellationRequested, true); const cancelled = await h.poll(first.id); assert.equal(cancelled.state, 'cancelled');
   await h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')); const done = await h.poll(first.id); assert.equal(done.state, 'needs_review'); assert.equal(done.nativeSessionId, running.nativeSessionId);
 });
@@ -95,24 +98,24 @@ test('a turn the harness cancels after a refused permission is needs_input, not 
 });
 
 test('abrupt runner loss is unknown and blocks blind resubmission', async t => {
-  const h = await setup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, r => r.state === 'running' && r.admission === 'dispatched');
+  const h = await setup(t); const first = await h.start('CASE:long'); const running = await h.poll(first.id, dispatched);
   process.kill(running.runnerPid, 'SIGKILL'); const unknown = await h.poll(first.id); assert.equal(unknown.state, 'unknown'); assert.equal(unknown.error.code, 'RUNNER_OUTCOME_UNKNOWN');
-  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')), e => e.response.error.code === 'INVALID_STATE');
-  const prompts = fs.readFileSync(path.join(h.cwd, `prompts-${running.nativeSessionId}.ndjson`), 'utf8').trim().split('\n'); assert.equal(prompts.length, 1);
+  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')), invalidState);
+  assert.equal(promptCount(h.cwd, running.nativeSessionId), 1);
 });
 
 test('failed native resume never silently creates a new session', async t => {
   const h = await setup(t); const first = await h.start('CASE:complete'); const done = await h.poll(first.id); fs.writeFileSync(path.join(h.cwd, 'fail-resume'), '1');
   await h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')); const failed = await h.poll(first.id); assert.notEqual(failed.state, 'needs_review'); assert.equal(failed.nativeSessionId, done.nativeSessionId);
-  assert.equal(fs.readdirSync(h.cwd).filter(x => x.startsWith('session-')).length, 1); assert.equal(fs.readFileSync(path.join(h.cwd, `prompts-${done.nativeSessionId}.ndjson`), 'utf8').trim().split('\n').length, 1);
+  assert.equal(fs.readdirSync(h.cwd).filter(x => x.startsWith('session-')).length, 1); assert.equal(promptCount(h.cwd, done.nativeSessionId), 1);
 });
 
 test('adapter transport loss after dispatch is unknown even when the runner settles', async t => {
   const h = await setup(t); const first = await h.start('CASE:disconnect'); const done = await h.poll(first.id);
   assert.equal(done.state, 'unknown'); assert.equal(done.runnerDone, true); assert.equal(done.admission, 'dispatched');
   const result = await h.run('result', first.id); assert.equal(result.execution.status, 'failed');
-  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')), e => e.response.error.code === 'INVALID_STATE');
-  assert.equal(fs.readFileSync(path.join(h.cwd, `prompts-${done.nativeSessionId}.ndjson`), 'utf8').trim().split('\n').length, 1);
+  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')), invalidState);
+  assert.equal(promptCount(h.cwd, done.nativeSessionId), 1);
 });
 
 test('permission denial cannot hide a subsequent turn timeout', async t => {
@@ -123,21 +126,22 @@ test('permission denial cannot hide a subsequent turn timeout', async t => {
   assert.equal(result.execution.status, 'failed');
   assert.equal(result.execution.error.code, 'TIMEOUT');
   assert.equal(done.state, 'unknown');
-  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')), e => e.response.error.code === 'INVALID_STATE');
+  await assert.rejects(h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete')), invalidState);
 });
 
 test('a live runner with an unknown outcome can still be cancelled', async t => {
   const h = await setup(t);
   const first = await h.start('CASE:long', '--timeout', '10');
-  await h.poll(first.id, r => r.state === 'running' && r.admission === 'dispatched');
+  await h.poll(first.id, dispatched);
   new Store(h.state).update(first.id, current => ({ ...current, state: 'unknown' }));
   try {
     assert.equal((await h.run('cancel', first.id)).cancellationRequested, true);
     assert.equal((await h.poll(first.id, r => r.runnerDone === true)).state, 'cancelled');
   } finally {
     // Request-scoped marker cleans up this test's runner even when the regression fails.
-    const folder = path.join(h.state, 'cancel'); fs.mkdirSync(folder, { recursive: true });
-    fs.writeFileSync(path.join(folder, `${first.id}-${first.requestId}.json`), '{}');
+    const marker = cancelMarkerPath(h.state, first.id, first.requestId);
+    fs.mkdirSync(path.dirname(marker), { recursive: true });
+    fs.writeFileSync(marker, '{}');
     await h.poll(first.id, r => r.runnerDone === true);
   }
 });
@@ -165,7 +169,7 @@ test('resolve is request-scoped, visible, and preserved in reply history', async
   const h = await setup(t);
   const start = await h.start('CASE:disconnect');
   const first = await h.poll(start.id, r => r.state === 'unknown' && r.runnerDone);
-  await assert.rejects(h.run('resolve', start.id, '--request', 'stale', '--note', 'Reviewed stale work'), e => e.response.error.code === 'INVALID_STATE');
+  await assert.rejects(h.run('resolve', start.id, '--request', 'stale', '--note', 'Reviewed stale work'), invalidState);
   const resolved = await h.run('resolve', start.id, '--request', first.requestId, '--note', 'Reviewed first request side effects');
   assert.equal(resolved.resolution.requestId, first.requestId);
   assert.equal((await h.run('result', start.id)).resolution.note, 'Reviewed first request side effects');
@@ -178,7 +182,7 @@ test('resolve is request-scoped, visible, and preserved in reply history', async
   assert.equal(next.history[0].error.code, 'RUNTIME');
   await h.run('reply', start.id, '--prompt-file', h.prompt('CASE:disconnect'));
   const second = await h.poll(start.id, r => r.state === 'unknown' && r.runnerDone);
-  await assert.rejects(h.run('resolve', start.id, '--request', first.requestId, '--note', 'Reviewed first request side effects'), e => e.response.error.code === 'INVALID_STATE');
+  await assert.rejects(h.run('resolve', start.id, '--request', first.requestId, '--note', 'Reviewed first request side effects'), invalidState);
   assert.equal((await h.run('status', start.id)).state, 'unknown');
   assert.notEqual(second.requestId, first.requestId);
 });
@@ -210,6 +214,12 @@ test('ACP message framing keeps progress auditable and validates only unambiguou
   const replied = await h.run('result', start.id);
   assert.equal(replied.responseMessageId, null);
   assert.equal(replied.history[0].responseMessageId, 'answer');
+  const thought = await h.start('CASE:thought');
+  assert.equal((await h.poll(thought.id)).state, 'needs_review');
+  const thoughtResult = await h.run('result', thought.id);
+  assert.equal(thoughtResult.output, JSON.stringify(thoughtResult.response));
+  const thoughtEvents = await h.run('events', thought.id);
+  assert.equal(thoughtEvents.events.filter(e => e.type === 'text_delta').map(e => e.text).join(''), thoughtResult.output);
 });
 
 
@@ -231,7 +241,7 @@ test('explicit blank objectives fail before creating a worker', async t => {
 
 test('runner tolerates lock contention across heartbeat and cancellation', async t => {
   const h = await setup(t); const started = await h.start('CASE:long');
-  await h.poll(started.id, r => r.state === 'running' && r.admission === 'dispatched');
+  await h.poll(started.id, dispatched);
   const moduleURL = new URL('../src/store.mjs', import.meta.url).href;
   const holder = spawn(process.execPath, ['--input-type=module', '-e', `import { Store } from ${JSON.stringify(moduleURL)}; const store = new Store(${JSON.stringify(h.state)}); store.update(${JSON.stringify(started.id)}, current => { console.log('locked'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 900); return current; });`]);
   await new Promise((resolve, reject) => { holder.stdout.once('data', resolve); holder.once('error', reject); });
@@ -273,6 +283,7 @@ test('agy headless turns validate the final answer and resume the same conversat
   await h.run('reply', first.id, '--prompt-file', h.prompt('CASE:complete choice A')); const done = await h.poll(first.id);
   assert.equal(done.state, 'needs_review'); assert.equal(done.nativeSessionId, waiting.nativeSessionId);
   const [start, reply] = h.calls();
+  assert.equal(start[start.indexOf('--print-timeout') + 1], '300s');
   assert.equal(start.includes('--conversation'), false); assert.equal(reply[reply.indexOf('--conversation') + 1], waiting.nativeSessionId);
   assert.deepEqual([reply[reply.indexOf('--model') + 1], reply[reply.indexOf('--effort') + 1]], ['fixture-model', 'low']);
 });
@@ -283,7 +294,7 @@ test('agy denied actions, invalid output, and cancellation map to task states', 
   const blocked = await h.poll(denied.id); assert.equal(blocked.state, 'needs_input');
   assert.ok((await h.run('events', denied.id)).events.some(x => x.type === 'permission_denied' && x.title === 'RunCommand'));
   assert.equal((await h.poll(malformed.id)).state, 'invalid_output');
-  await h.poll(long.id, r => r.state === 'running' && r.admission === 'dispatched'); await h.run('cancel', long.id);
+  await h.poll(long.id, dispatched); await h.run('cancel', long.id);
   assert.equal((await h.poll(long.id)).state, 'cancelled');
 });
 

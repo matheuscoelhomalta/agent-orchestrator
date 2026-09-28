@@ -36,7 +36,7 @@ Save every returned worker ID and request ID. Prevent concurrent writers from ow
 
 ## Monitor all workers
 
-Run `agent-orchestrator --json status` after dispatch and whenever returning from independent work. To block until workers settle, use `agent-orchestrator --json wait ID... --timeout 600`; `settled: false` means some are still running. Repeat bounded wait, status, and event checks while any worker remains `starting`, `running`, or `cancelling`; do not end supervision after a single check. Inspect every active worker with bounded event pages, preserving `nextCursor` for the next read:
+Run `agent-orchestrator --json status` after dispatch and whenever returning from independent work. To block until workers settle, use `agent-orchestrator --json wait ID... --timeout 600`; `settled: false` means some are still running. Repeat bounded wait, status, and event checks while any worker remains `starting` or `running`; do not end supervision after a single check. Inspect every active worker with bounded event pages, preserving `nextCursor` for the next read:
 
 ```sh
 agent-orchestrator --json events WORKER_ID --after 0 --limit 100

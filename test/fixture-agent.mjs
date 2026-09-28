@@ -46,6 +46,7 @@ lines.on('line', line => {
     fs.appendFileSync(path.join(process.cwd(), `prompts-${sessionId}.ndjson`), JSON.stringify({ text, pid: process.pid }) + '\n');
     if (scenario === 'disconnect') process.exit(7);
     if (scenario === 'long') { pending = id; return; }
+    if (scenario === 'thought') send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Private fixture thought.' } } } });
     if (['framed', 'unframed', 'interleaved', 'badframe'].includes(scenario)) {
       const chunk = (text, messageId) => send({ method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text }, ...(messageId ? { messageId } : {}) } } });
       const answer = JSON.stringify({ status: 'completed', summary: 'Framed answer', evidence: ['fixture inspected'] });

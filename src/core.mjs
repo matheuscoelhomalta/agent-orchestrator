@@ -8,7 +8,7 @@ export function supportedNode(version) {
   return Boolean(match && (Number(match[1]) > 22 || Number(match[1]) === 22 && Number(match[2]) >= 13));
 }
 
-export const activeStates = new Set(['starting', 'running', 'cancelling']);
+export const activeStates = new Set(['starting', 'running']);
 export function fail(code, message) { return Object.assign(new Error(message), { code }); }
 export const timestamp = () => new Date().toISOString();
 export function executable(name) {
@@ -22,13 +22,14 @@ export function executable(name) {
   return null;
 }
 
-export function defaults() {
+function defaults() {
   const modules = fileURLToPath(new URL('../node_modules/', import.meta.url));
+  const codex = executable('codex'), claude = executable('claude'), agy = executable('agy');
   return {
-    codex: { command: [process.execPath, path.join(modules, '@agentclientprotocol/codex-acp/dist/index.js')], model: 'gpt-5.6-sol', effort: 'high', effortKey: 'reasoning_effort', mode: 'agent', nativeCommand: 'codex', env: { ...(executable('codex') ? { CODEX_PATH: executable('codex') } : {}), INITIAL_AGENT_MODE: 'agent', NO_BROWSER: '1' } },
-    claude: { command: [process.execPath, path.join(modules, '@agentclientprotocol/claude-agent-acp/dist/index.js')], model: 'claude-opus-5-5', modelAlias: 'opus', effort: 'medium', effortKey: 'effort', mode: 'auto', nativeCommand: 'claude', env: { ...(executable('claude') ? { CLAUDE_CODE_EXECUTABLE: executable('claude') } : {}) } },
+    codex: { command: [process.execPath, path.join(modules, '@agentclientprotocol/codex-acp/dist/index.js')], model: 'gpt-5.6-sol', effort: 'high', effortKey: 'reasoning_effort', mode: 'agent', nativeCommand: 'codex', env: { ...(codex ? { CODEX_PATH: codex } : {}), INITIAL_AGENT_MODE: 'agent', NO_BROWSER: '1' } },
+    claude: { command: [process.execPath, path.join(modules, '@agentclientprotocol/claude-agent-acp/dist/index.js')], model: 'claude-opus-5-5', modelAlias: 'opus', effort: 'medium', effortKey: 'effort', mode: 'auto', nativeCommand: 'claude', env: { ...(claude ? { CLAUDE_CODE_EXECUTABLE: claude } : {}) } },
     // Optional: offered only when installed. Runs under the user's native toolPermission; always-proceed is accepted by explicit user choice.
-    ...(executable('agy') && { agy: { protocol: 'agy-print', command: [executable('agy')], model: 'gemini-3.8-flash-medium', effort: 'medium', effortKey: 'effort', mode: 'native', nativeCommand: 'agy' } }),
+    ...(agy && { agy: { protocol: 'agy-print', command: [agy], model: 'gemini-3.8-flash-medium', effort: 'medium', effortKey: 'effort', mode: 'native', nativeCommand: 'agy' } }),
   };
 }
 
@@ -58,6 +59,7 @@ export function validateSpec(spec) {
 }
 
 export function defaultStateDir() { return path.join(os.homedir(), '.local/state/agent-orchestrator'); }
+export function cancelMarkerPath(stateDir, id, requestId) { return path.join(stateDir, 'cancel', `${id}-${requestId}.json`); }
 
 export function classify(output, execution) {
   if (execution.status === 'cancelled') return { state: 'cancelled', response: null };
@@ -74,8 +76,8 @@ export function classify(output, execution) {
   return { state: 'invalid_output', response: null };
 }
 
-export function taskPrompt(record, text) {
-  return `You are a delegated worker. Objective: ${record.objective}\nAcceptance criteria: ${record.criteria}\nAuthorized scope: ${record.scope}\n${text}\nReturn exactly one JSON object, without markdown fences. For completion: {"status":"completed","summary":"...","evidence":["..."]}. Evidence must reference checks or artifacts supporting acceptance. For a material missing decision: {"status":"needs_input","question":"..."}. For failure: {"status":"failed","reason":"..."}. Do not expand scope or bypass permissions. Your completion claim will be reviewed by the coordinator.`;
+export function taskPrompt(record) {
+  return `You are a delegated worker. Objective: ${record.objective}\nAcceptance criteria: ${record.criteria}\nAuthorized scope: ${record.scope}\n${record.prompt}\nReturn exactly one JSON object, without markdown fences. For completion: {"status":"completed","summary":"...","evidence":["..."]}. Evidence must reference checks or artifacts supporting acceptance. For a material missing decision: {"status":"needs_input","question":"..."}. For failure: {"status":"failed","reason":"..."}. Do not expand scope or bypass permissions. Your completion claim will be reviewed by the coordinator.`;
 }
 
 export async function configure(runtime, handle, spec) {
@@ -94,6 +96,10 @@ export async function configure(runtime, handle, spec) {
 export function alive(pid) {
   if (!Number.isInteger(pid) || pid < 1) return false;
   try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+}
+
+export function mayStillChange(record) {
+  return activeStates.has(record.state) || (record.state === 'unknown' && !record.runnerDone && alive(record.runnerPid));
 }
 
 export function reconcile(store, id) {

@@ -1,6 +1,6 @@
 # CLI contract
 
-Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required; an Antigravity login is needed only when `agy` is installed and used. Dependencies are pinned to the trial versions. No Grok/X capability is claimed.
+Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required; an Antigravity login is needed only when `agy` is installed and used. Dependencies are pinned: ACPX 0.19.3, codex-acp 1.13.1, and claude-agent-acp 0.81.2. No Grok/X capability is claimed.
 
 ## Setup
 
@@ -10,7 +10,7 @@ make install-local
 agent-orchestrator --json doctor
 ```
 
-The installer creates a wrapper at `~/.local/bin/agent-orchestrator`, refuses conflicting commands, and requires this checkout and Node to remain available. Ensure `~/.local/bin` is on PATH. The coordinator package lives at `skills/agent-orchestrator/`; no global skill links are created.
+The installer creates a wrapper at `~/.local/bin/agent-orchestrator`, refuses conflicting commands, and requires this checkout and Node to remain available. Ensure `~/.local/bin` is on PATH. The coordinator skill lives at `skills/agent-orchestrator/`; the installer creates no skill links (see the [daily workflow](DAILY-WORKFLOW.md)).
 
 ## Commands
 
@@ -19,7 +19,7 @@ The installer creates a wrapper at `~/.local/bin/agent-orchestrator`, refuses co
 | `doctor` | Static dependency/configuration/native-command checks; no model call and no authentication verification |
 | `start --harness NAME --prompt-file FILE --criteria TEXT --scope TEXT` | Record a task and start an asynchronous runner; returns worker/request IDs before task completion |
 | `status [ID]` | Compact worker summaries with identity, task state, heartbeat/progress, and blockers; reconcile missing/stale runner into unknown |
-| `wait [ID...] [--timeout N]` | Block until those workers (or all) leave starting/running/cancelling, reconciling each second; returns `settled` false at the timeout (1–3600 seconds, default 300) |
+| `wait [ID...] [--timeout N]` | Block until those workers (or all) leave starting/running, reconciling each second; returns `settled` false at the timeout (1–3600 seconds, default 300) |
 | `events ID --after N --limit N` | Sequenced page with nextCursor; limit 1–1000, default 100 |
 | `result ID` | Current full text transcript, validated response text, response, execution settlement, task state, acceptance, reconciliation, and prior-turn history |
 | `reply ID --prompt-file FILE` | New request in the same native session; prior result saved in record history |
@@ -44,6 +44,10 @@ Machine-readable command output uses `{ "ok": true, "data": ... }`; failures und
 {"ok":false,"error":{"code":"INVALID_STATE","message":"Worker is active or has an unresolved outcome."}}
 ```
 
+`wait` returns `{"settled":true|false,"workers":[...]}`. A worker counts as unsettled while it is starting or running, or while it is unknown with a still-live runner. Without IDs it waits on every worker in the state directory.
+
+Event types include `runner_started`, `adapter_spawned`, `configuration_verified` (ACP) or `configuration_reported` (agy), `prompt_dispatched`, `text_delta`, `tool_call` (with the tool's name and status), `status`, `permission_denied`, `cancel_requested`, `adapter_exited`, and `turn_settled`. Thought chunks and raw tool payloads are never stored.
+
 ## Response and acceptance
 
 Workers are prompted to return one strict JSON object:
@@ -62,9 +66,13 @@ Workers are prompted to return one strict JSON object:
 
 Completed JSON becomes needs_review. Only an explicit accept command with the current request ID marks it accepted. The caller must actually inspect evidence: a note is an audit record, not an automated semantic verifier. Invalid JSON or valid JSON that fails the response schema becomes invalid_output. No automatic task retry or semantic correction is performed.
 
+### Response framing
+
+`result.output` retains the full non-thought text transcript. `responseOutput` is the text subjected to strict JSON validation; `responseMessageId` identifies its producer message when available. For ACP harnesses (Codex and Claude both send progress notes as separate messages), distinct non-interleaved message IDs allow progress messages to remain auditable while validating the last message. Missing, blank, or interleaved IDs fall back to validating the whole stream. For agy, the final `result.response` is validated. Prose within the final message is still invalid; JSON is never extracted from arbitrary text. Message IDs are framing hints, not permission or authenticity evidence. Replies archive these fields with the prior request.
+
 ## Native configuration
 
-Defaults preserve the previous delegation conventions: Codex gpt-5.6-sol/high in agent Auto-review mode; Claude claude-opus-5-5/medium in auto mode. Configuration is applied via ACPX before the task prompt and verified from accepted mode/status responses. Claude's advertised `opus` alias is accepted only as the explicitly configured canonical alias. Changing versions or providers may require configuration changes and fresh verification.
+Defaults: Codex gpt-5.6-sol/high in agent Auto-review mode; Claude claude-opus-5-5/medium in auto mode; agy (below) when installed. Configuration is applied via ACPX before the task prompt and verified from accepted mode/status responses. Claude's advertised `opus` alias is accepted only as the explicitly configured canonical alias. Changing versions or providers may require configuration changes and fresh verification.
 
 ### Antigravity (`agy`)
 
@@ -84,7 +92,13 @@ A custom config file is a harness-name-to-spec map:
 {"codex":{"command":["/absolute/path/to/node","/absolute/path/to/codex-acp/dist/index.js"],"model":"gpt-5.6-sol","effort":"high","effortKey":"reasoning_effort","mode":"agent","env":{"CODEX_PATH":"/absolute/path/to/codex","INITIAL_AGENT_MODE":"agent","NO_BROWSER":"1"}}}
 ```
 
-Config is trusted code execution through argv, not a sandbox. Do not put credentials in argv or config. Persisted environment keys are limited to native executable paths and the tested nonsecret startup settings. Use native authentication stores; no API key setup is performed. Arbitrary custom adapter support is a configuration mechanism, not a compatibility guarantee.
+Config is trusted code execution through argv, not a sandbox. Do not put credentials in argv or config. Persisted environment keys are limited to native executable paths and the tested nonsecret startup settings. Permission-bypass modes (`bypassPermissions`, `dontAsk`, `agent-full-access`, and similar) and bypass flags (`--dangerously-skip-permissions`, `--always-approve`, `--yolo`, and similar) are rejected. Use native authentication stores; no API key setup is performed. Arbitrary custom adapter support is a configuration mechanism, not a compatibility guarantee.
+
+### Other harnesses
+
+- **OpenCode** runs through a custom config entry. Live checks passed a verified file edit and a format correction with `opencode-go/deepseek-v4.1-flash` (its advertised default `opencode/deepseek-v4.1-flash` was unavailable); needs_input, recall, and cancellation were not tested live.
+- **Grok** (1.0.41, `grok agent stdio`) cannot run through the CLI. Its ACP session advertises `model` and `reasoning_effort` but no `mode` option, so start fails with `ACP_BACKEND_UNSUPPORTED_CONTROL` before any prompt is dispatched. Its native harness did complete model turns, same-session resume, and a verified X search standalone. Supporting it would need an acknowledged, effective native permission policy that ACPX can pass through and verify; exempting it from the mode check is deliberately not done.
+- **Gemini CLI** 0.32.1 is rejected at login (`IneligibleTierError`); Antigravity (`agy`) is the Google harness.
 
 ## Persistence and recovery
 
@@ -98,7 +112,7 @@ Atomic writes protect process-level consistency, not power-loss durability: no f
 
 ## Permission boundary
 
-Native Auto/Auto-review remains enabled; the ACP client denies permission callbacks it cannot authorize and surfaces them as needs_input. ACP filesystem/terminal callbacks are disabled. These settings are not an OS sandbox for native tools. Recognized native questions may fail before the permission callback and require a native client capable of handling them. The CLI does not approve a suspended native dialog or automatically broaden policy.
+Native Auto/Auto-review remains enabled; the ACP client denies permission callbacks it cannot authorize and surfaces them as needs_input. A turn the harness ends as cancelled after such a refusal (Codex does this) also settles as needs_input; only a coordinator `cancel` produces cancelled. ACP filesystem/terminal callbacks are disabled. These settings are not an OS sandbox for native tools. Recognized native questions may fail before the permission callback and require a native client capable of handling them. The CLI does not approve a suspended native dialog or automatically broaden policy.
 
 Under the defaults, `--scope` is advisory: live tests showed Codex (Auto-review), Claude (auto), OpenCode (build), and agy (`always-proceed`) all writing outside the working directory when asked, with Codex's own reviewer approving the escalation. For tasks that need a hard boundary, `start --strict` applies these native settings to that worker (replies keep them); a `--config` file can set them too. Each was verified live on 2026-09-27 (in-directory edit succeeded; a shell write to the home directory was blocked). `--strict` fails for harnesses without verified settings:
 
@@ -112,9 +126,4 @@ These replace the default modes only for workers started with that config. Codex
 
 ## Verification
 
-`make test` runs syntax checks, ledger tests, and subprocess/ACP integration checks. Fixtures verify protocol behavior without paid calls; they do not establish native adapter parity. The live verification report separately records the bounded Codex/Claude/agy checks and remaining gaps.
-
-
-### Response framing
-
-`result.output` retains the full non-thought text transcript. `responseOutput` is the text subjected to strict JSON validation; `responseMessageId` identifies its producer message when available. For ACP harnesses (Codex and Claude both send progress notes as separate messages), distinct non-interleaved message IDs allow progress messages to remain auditable while validating the last message. Missing, blank, or interleaved IDs fall back to validating the whole stream. Prose within the final message is still invalid; JSON is never extracted from arbitrary text. Message IDs are framing hints, not permission or authenticity evidence. Replies archive these fields with the prior request.
+`make test` runs syntax checks, ledger and core tests, subprocess integration tests against ACP and agy fixtures, and installer tests. Fixtures verify protocol behavior without paid calls; they do not establish native adapter parity. The [live test report](MULTI-HARNESS-TEST-2026-09-27.md) records the bounded native checks and remaining gaps.

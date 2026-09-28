@@ -7,6 +7,13 @@ import { supportedNode, classify, configure, reconcile, validateSpec, strict } f
 import { main } from '../src/cli.mjs';
 import { Store } from '../src/store.mjs';
 
+const baseSpec = { model: 'm', mode: 'default', effort: 'low', effortKey: 'effort' };
+function tempDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-core-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
 test('execution and task acceptance remain separate', () => {
   const completed = { status: 'completed' };
   assert.equal(classify('{"status":"completed","summary":"done","evidence":[]}', completed).state, 'needs_review');
@@ -18,7 +25,7 @@ test('execution and task acceptance remain separate', () => {
 });
 
 test('configuration is verified before prompting and accepts only explicit canonical alias', async () => {
-  const spec = { model: 'requested', modelAlias: 'canonical', mode: 'auto', effortKey: 'effort', effort: 'low' };
+  const spec = { ...baseSpec, model: 'requested', modelAlias: 'canonical', mode: 'auto' };
   const options = [{ id: 'mode', currentValue: 'auto' }, { id: 'effort', currentValue: 'low' }];
   const runtime = { setModel: async () => {}, setConfigOption: async () => ({ configOptions: options }), getStatus: async () => ({ models: { currentModelId: 'canonical' }, details: { configOptions: options } }) };
   assert.equal((await configure(runtime, {}, spec)).model, 'canonical');
@@ -28,20 +35,18 @@ test('configuration is verified before prompting and accepts only explicit canon
   await assert.rejects(configure(runtime, {}, spec), { code: 'CONFIG_MISMATCH' });
 });
 
-test('heartbeat expiry produces unknown instead of resubmitting work', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-reconcile-'));
-  try {
-    const store = new Store(dir);
-    store.create({ id: 'worker', state: 'running', requestId: 'r1', runnerPid: process.pid, updatedAt: new Date(0).toISOString() });
-    const next = reconcile(store, 'worker');
-    assert.equal(next.state, 'unknown');
-    assert.equal(next.requestId, 'r1');
-    assert.equal(next.error.code, 'RUNNER_OUTCOME_UNKNOWN');
-  } finally { fs.rmSync(dir, { recursive: true }); }
+test('heartbeat expiry produces unknown instead of resubmitting work', t => {
+  const dir = tempDir(t);
+  const store = new Store(dir);
+  store.create({ id: 'worker', state: 'running', requestId: 'r1', runnerPid: process.pid, updatedAt: new Date(0).toISOString() });
+  const next = reconcile(store, 'worker');
+  assert.equal(next.state, 'unknown');
+  assert.equal(next.requestId, 'r1');
+  assert.equal(next.error.code, 'RUNNER_OUTCOME_UNKNOWN');
 });
 
 test('configuration excludes persisted credentials and permission bypass', () => {
-  const spec = { command: ['node', 'adapter.js'], model: 'm', effort: 'low', effortKey: 'effort', mode: 'default' };
+  const spec = { ...baseSpec, command: ['node', 'adapter.js'] };
   validateSpec(spec);
   assert.throws(() => validateSpec({ ...spec, env: { API_KEY: 'redacted-fixture' } }), { code: 'INVALID_INPUT' });
   assert.throws(() => validateSpec({ ...spec, mode: 'yolo' }), { code: 'INVALID_INPUT' });
@@ -54,21 +59,19 @@ test('configuration excludes persisted credentials and permission bypass', () =>
 test('configuration refuses unknown model without a declared alias', async () => {
   const options = [{ id: 'mode', currentValue: 'default' }, { id: 'effort', currentValue: 'low' }];
   const runtime = { setModel: async () => {}, setConfigOption: async () => ({ configOptions: options }), getStatus: async () => ({ details: { configOptions: options } }) };
-  await assert.rejects(configure(runtime, {}, { model: 'expected', mode: 'default', effort: 'low', effortKey: 'effort' }), { code: 'CONFIG_MISMATCH' });
+  await assert.rejects(configure(runtime, {}, { ...baseSpec, model: 'expected' }), { code: 'CONFIG_MISMATCH' });
 });
 
-test('doctor refuses missing custom executable', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-doctor-'));
-  try {
-    const config = path.join(dir, 'config.json');
-    fs.writeFileSync(config, JSON.stringify({ missing: { command: [path.join(dir, 'missing-executable')], model: 'm', mode: 'default', effort: 'low', effortKey: 'effort' } }));
-    assert.equal((await main(['doctor', '--config', config])).ok, false);
-    fs.writeFileSync(config, '{}');
-    await assert.rejects(main(['doctor', '--config', config]), { code: 'INVALID_INPUT' });
-    const native = path.join(dir, 'not-executable'); fs.writeFileSync(native, 'fixture', { mode: 0o600 });
-    fs.writeFileSync(config, JSON.stringify({ missing: { command: [process.execPath], model: 'm', mode: 'default', effort: 'low', effortKey: 'effort', env: { CODEX_PATH: native } } }));
-    assert.equal((await main(['doctor', '--config', config])).ok, false);
-  } finally { fs.rmSync(dir, { recursive: true }); }
+test('doctor refuses missing custom executable', async t => {
+  const dir = tempDir(t);
+  const config = path.join(dir, 'config.json');
+  fs.writeFileSync(config, JSON.stringify({ missing: { ...baseSpec, command: [path.join(dir, 'missing-executable')] } }));
+  assert.equal((await main(['doctor', '--config', config])).ok, false);
+  fs.writeFileSync(config, '{}');
+  await assert.rejects(main(['doctor', '--config', config]), { code: 'INVALID_INPUT' });
+  const native = path.join(dir, 'not-executable'); fs.writeFileSync(native, 'fixture', { mode: 0o600 });
+  fs.writeFileSync(config, JSON.stringify({ missing: { ...baseSpec, command: [process.execPath], env: { CODEX_PATH: native } } }));
+  assert.equal((await main(['doctor', '--config', config])).ok, false);
 });
 
 
@@ -78,10 +81,9 @@ test('Node support matches the pinned runtime minimum', () => {
 });
 
 test('doctor checks every native executable override', async t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-overrides-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dir = tempDir(t);
   const config = path.join(dir, 'config.json');
-  fs.writeFileSync(config, JSON.stringify({ fixture: { command: [process.execPath], model: 'm', mode: 'default', effort: 'low', effortKey: 'effort', env: { CODEX_PATH: process.execPath, CLAUDE_CODE_EXECUTABLE: path.join(dir, 'missing') } } }));
+  fs.writeFileSync(config, JSON.stringify({ fixture: { ...baseSpec, command: [process.execPath], env: { CODEX_PATH: process.execPath, CLAUDE_CODE_EXECUTABLE: path.join(dir, 'missing') } } }));
   const result = await main(['doctor', '--config', config]);
   assert.equal(result.ok, false); assert.equal(result.harnesses[0].nativeOverridePresent, false);
 });

@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Store } from './store.mjs';
-import { activeStates, defaultStateDir, fail, readConfig, reconcile, timestamp, validateSpec, alive, executable, summarize, supportedNode, strict } from './core.mjs';
+import { activeStates, defaultStateDir, fail, readConfig, reconcile, timestamp, validateSpec, alive, executable, summarize, supportedNode, strict, mayStillChange, cancelMarkerPath } from './core.mjs';
 
 const help = `agent-orchestrator — task supervision over ACPX
 
@@ -38,10 +38,6 @@ function number(value, fallback, min, max) {
   return parsed;
 }
 function required(value, name) { if (typeof value !== 'string' || !value.trim()) throw fail('INVALID_INPUT', `${name} is required.`); return value; }
-function privateWrite(filename, value) {
-  fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(filename, JSON.stringify(value), { mode: 0o600, flag: 'wx' });
-}
 async function launch(store, record, stateDir) {
   const log = path.join(stateDir, `${record.id}-${record.requestId}.log`);
   let fd, child;
@@ -97,7 +93,7 @@ export async function main(argv = process.argv.slice(2)) {
     for (;;) {
       const workers = (ids.length ? ids : store.list().map(x => x.id)).map(x => summarize(reconcile(store, x)));
       // A stale-heartbeat unknown whose runner still lives can still change state.
-      const settled = !workers.some(x => activeStates.has(x.state) || (x.state === 'unknown' && !x.runnerDone && alive(x.runnerPid)));
+      const settled = !workers.some(mayStillChange);
       if (settled || Date.now() >= deadline) return { settled, workers };
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
@@ -107,9 +103,12 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === 'events') return store.events(id, { after: number(flags.after, 0, 0, Number.MAX_SAFE_INTEGER), limit: number(flags.limit, 100, 1, 1000) });
   if (command === 'result') return { id, requestId: record.requestId, nativeSessionId: record.nativeSessionId, state: record.state, execution: record.execution || null, response: record.response || null, output: record.output || '', responseOutput: record.responseOutput ?? record.output ?? '', responseMessageId: record.responseMessageId || null, acceptance: record.acceptance || null, resolution: record.resolution || null, history: record.history || [], error: record.error || null };
   if (command === 'cancel') {
-    if (!activeStates.has(record.state) && !(record.state === 'unknown' && !record.runnerDone && alive(record.runnerPid))) throw fail('INVALID_STATE', `Cannot cancel ${record.state}.`);
-    const cancelPath = path.join(stateDir, 'cancel', `${id}-${record.requestId}.json`);
-    try { privateWrite(cancelPath, { requestId: record.requestId, at: timestamp() }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+    if (!mayStillChange(record)) throw fail('INVALID_STATE', `Cannot cancel ${record.state}.`);
+    const cancelPath = cancelMarkerPath(stateDir, id, record.requestId);
+    try {
+      fs.mkdirSync(path.dirname(cancelPath), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(cancelPath, JSON.stringify({ requestId: record.requestId, at: timestamp() }), { mode: 0o600, flag: 'wx' });
+    } catch (error) { if (error.code !== 'EEXIST') throw error; }
     return { id, requestId: record.requestId, cancellationRequested: true, note: 'Cancellation is not settled yet; poll status/result.' };
   }
   if (command === 'accept') {
@@ -147,13 +146,14 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
+  const json = process.argv.includes('--json');
   main().then(data => { if (data !== undefined) {
     const payload = data.ok === false ? { ok: false, error: { code: 'DOCTOR_FAILED', message: 'Static installation checks failed.' }, data } : { ok: true, data };
-    const print = data.ok === false && !process.argv.includes('--json') ? console.error : console.log;
-    print(JSON.stringify(payload, null, process.argv.includes('--json') ? 0 : 2));
+    const print = data.ok === false && !json ? console.error : console.log;
+    print(JSON.stringify(payload, null, json ? 0 : 2));
     if (data.ok === false) process.exitCode = 1;
   } }).catch(error => {
-    const print = process.argv.includes('--json') ? console.log : console.error;
+    const print = json ? console.log : console.error;
     print(JSON.stringify({ ok: false, error: { code: error.code || 'ERROR', message: error.message } }));
     process.exitCode = 1;
   });

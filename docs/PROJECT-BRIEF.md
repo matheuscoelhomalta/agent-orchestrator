@@ -4,7 +4,7 @@
 
 The user wants reliable orchestration between agents from different harnesses. The central problem is that the main agent does not monitor subagents well: it loses track of progress, mishandles blockers, fails to follow through, or receives badly formatted or otherwise unsuitable responses.
 
-Different agents offer different perceived strengths. The user cited Claude for design, Grok for X access, and GPT for strong models. These are routing motivations, not benchmark findings. In particular, actual X search access through the installed Grok harness has not been demonstrated.
+Different agents offer different perceived strengths. The user cited Claude for design, Grok for X access, and GPT for strong models. These are routing motivations, not benchmark findings. Grok's X search works in its native harness but cannot run through this CLI (see the [CLI contract](CLI.md#other-harnesses)); the [coordinator skill](../skills/agent-orchestrator/SKILL.md) holds the evidence-based routing guidance.
 
 ## Established direction
 
@@ -16,8 +16,6 @@ Different agents offer different perceived strengths. The user cited Claude for 
 - Investigate deeply before committing to an implementation.
 
 Ghostty is the terminal interface. It does not need to become the orchestration backend. A common protocol can hide many harness differences, but individual capabilities, permissions, configuration, and resume semantics still need verification.
-
-Earlier interview replies included numbered choices such as “3A.” Their original option texts are not available in the retained context, so they are not expanded into additional requirements here.
 
 ## Desired outcome
 
@@ -35,4 +33,19 @@ Formatting validation is only one acceptance check. An execution that finishes s
 6. Preserve configured permissions and model choices; verify them after reconnecting.
 7. Remain small enough to use from existing agent harnesses and terminals.
 
-These criteria synthesize the discussion. Exact defaults, recovery limits, and the first implementation interface still need agreement.
+The [CLI contract](CLI.md) documents how each criterion is met and where limits remain.
+
+## Why ACPX
+
+ACP (Agent Client Protocol) standardizes client-to-harness communication: sessions, prompts, streamed updates, cancellation, configuration, and permission callbacks. It does not decide who does a task, monitor workers to completion, or judge results; those are the supervisor's job.
+
+[ACPX](https://github.com/openclaw/acpx) supplies the execution layer through its embedded persistent runtime, with the [codex-acp](https://github.com/agentclientprotocol/codex-acp) and [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) adapters. The embedded runtime enforces same-session-only resume, and it lets the CLI set and verify model, effort, and permission mode before any task prompt is dispatched. ACPX's shared runtime was not used because its controls require an already-running owner, normally started by prompt submission. This CLI adds only what ACPX lacks: durable task accounting, response validation, bounded correction, acceptance, and unknown-outcome handling.
+
+Alternatives inspected in September 2026 did not fit this direction:
+
+| Candidate | Finding |
+|---|---|
+| [Herdr](https://github.com/herdrdev/herdr) | Owns interactive PTY terminals and detects state from hooks and screen rules rather than structured turn results |
+| agent-deck | tmux/SQLite monitoring; an unset Claude `dangerous_mode` defaulted to true |
+| backnotprop/orchestrator | Auto-accepted Codex approvals and used yolo behavior for Copilot |
+| mco-org/mco | Replays history into fresh native calls instead of continuing the original session |
