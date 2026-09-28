@@ -1,3 +1,9 @@
+---
+title: "Run Codex and Claude Code together"
+description: "Run parallel code reviews, monitor workers, resume native agent sessions, and independently verify results from the terminal."
+permalink: /workflows/
+---
+
 # Run Codex and Claude Code together
 
 Agent Orchestrator can run independent coding-agent tasks in parallel while keeping each worker's state and native session separate. Use disjoint scopes for editing tasks. For reviews, compare findings and check the evidence yourself.

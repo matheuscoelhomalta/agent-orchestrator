@@ -1,3 +1,9 @@
+---
+title: "Install Agent Orchestrator"
+description: "Install the local coding-agent CLI, check your environment, run a first task, and learn how to update or uninstall."
+permalink: /getting-started/
+---
+
 # Getting started with Agent Orchestrator
 
 Agent Orchestrator coordinates native coding agents from a terminal. It keeps task state and session identities locally while the native harness performs the work. Start with a small repository you are authorized to inspect.
@@ -14,7 +20,7 @@ Node.js 22.13.0 is the minimum. The CI matrix covers that minimum and Node 24 on
 
 The default configuration includes both `codex` and `claude`. Install and sign in to their native CLIs using their official instructions, then confirm they work in a normal terminal. `doctor` reports the health of every configured harness, so a missing unused default can make it fail; a [trusted custom configuration](CLI.md#native-configuration) can limit the harness map to those you use. Antigravity is optional and detected only when `agy` is executable on PATH.
 
-Model access, provider terms, and usage charges remain those of your own native account. Review [third-party terms](../THIRD-PARTY.md), especially before using Antigravity. Do not copy credentials into project files.
+Model access, provider terms, and usage charges remain those of your own native account. Review [third-party terms](https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/THIRD-PARTY.md), especially before using Antigravity. Do not copy credentials into project files.
 
 ## Install from GitHub
 
@@ -34,7 +40,7 @@ The dependency install does not install or log in to all native harnesses for yo
 
 ## First task
 
-Follow the complete [README review example](../README.md#review-a-repository), then read the [parallel review and continuation examples](WORKFLOWS.md). Keep the worker ID and current request ID from each start or reply. `wait` finishing means execution settled, not that the task succeeded. Inspect `result`, handle its state, and accept only independently verified `needs_review` results.
+Follow the complete [README review example](https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/README.md#review-a-repository), then read the [parallel review and continuation examples](WORKFLOWS.md). Keep the worker ID and current request ID from each start or reply. `wait` finishing means execution settled, not that the task succeeded. Inspect `result`, handle its state, and accept only independently verified `needs_review` results.
 
 Use `--strict` for editing tasks and understand its [native permission limits](CLI.md#permission-boundary). Neither a read-only prompt nor `--scope` enforces a read-only filesystem.
 
@@ -70,4 +76,4 @@ Uninstalling does not remove task records or native histories. Keep or delete `~
 | `invalid_output` | Inspect output; one explicitly requested formatting correction is available. Do not repeat task execution to fix formatting. |
 | `unknown` | Inspect processes, native history, and possible side effects before resolving. Do not blindly retry. |
 
-For unresolved problems, submit a sanitized reproduction through the [contribution guide](../CONTRIBUTING.md).
+For unresolved problems, submit a sanitized reproduction through the [contribution guide](https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/CONTRIBUTING.md).

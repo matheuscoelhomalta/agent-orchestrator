@@ -1,10 +1,16 @@
+---
+title: "Why Agent Orchestrator exists"
+description: "A small local supervisor for native coding agents, built on ACPX with durable task records and explicit result verification."
+permalink: /about/
+---
+
 # Project brief
 
 ## Motivation
 
 Coordinating coding agents across native harnesses requires more than launching processes. A coordinator needs to track progress, handle blockers, preserve session context, and verify whether a result actually satisfies the task.
 
-Different agents can contribute different findings. The [coordinator skill](../skills/agent-orchestrator/SKILL.md) records provisional routing guidance from bounded local pilots, not a general benchmark. Supported integrations and their limits are documented in the [CLI contract](CLI.md#other-harnesses).
+Different agents can contribute different findings. The [coordinator skill](https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/skills/agent-orchestrator/SKILL.md) records provisional routing guidance from bounded local pilots, not a general benchmark. Supported integrations and their limits are documented in the [CLI contract](CLI.md#other-harnesses).
 
 ## Established direction
 

@@ -6,6 +6,8 @@ Use it for independent code reviews, bounded edits, and follow-up work across ag
 
 It runs in your existing terminal, including Ghostty. There is no daemon, port, or dashboard. [ACPX](https://github.com/openclaw/acpx) runs the Codex and Claude ACP adapters; Antigravity uses its native headless CLI. This is an early-stage supervisor, with [documented limits](docs/CLI.md#permission-boundary).
 
+[Documentation website](https://matheuscoelhomalta.github.io/agent-orchestrator/) · [Releases](https://github.com/matheuscoelhomalta/agent-orchestrator/releases) · [MIT license](LICENSE)
+
 ## Install
 
 Requires **Node.js 22.13.0+**, npm, Git, Python 3, Make, and a POSIX shell. Native Codex and Claude Code commands must be installed and authenticated for the default configuration. Native turns use your provider account and quota. See [supported environments and setup](docs/GETTING-STARTED.md).
@@ -100,3 +102,7 @@ Under default modes `--scope` is advisory; use `start --strict` for any task tha
 Runtime state lives in `~/.local/state/agent-orchestrator` (override with `--state-dir`) and can contain task data and native session details. Local evidence archives under `evidence/` are gitignored; never publish native session stores as test artifacts.
 
 See [contribution guidance](CONTRIBUTING.md), the [security policy](SECURITY.md), and the [code of conduct](CODE_OF_CONDUCT.md). Report ordinary bugs through [GitHub issues](https://github.com/matheuscoelhomalta/agent-orchestrator/issues); report vulnerabilities privately through the security policy.
+
+## License
+
+This project is available under the [MIT license](LICENSE). Dependencies, native tools, and hosted services retain their [own licenses and terms](THIRD-PARTY.md).

@@ -1,0 +1,21 @@
+title: Agent Orchestrator
+description: Local CLI for coordinating Codex and Claude Code agents with parallel tasks, native session continuation, and verified acceptance.
+url: https://matheuscoelhomalta.github.io
+baseurl: /agent-orchestrator
+repository: matheuscoelhomalta/agent-orchestrator
+lang: en
+markdown: kramdown
+kramdown:
+  input: GFM
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-relative-links
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+exclude:
+  - Gemfile
+  - Gemfile.lock

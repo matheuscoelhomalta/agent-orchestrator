@@ -1,3 +1,9 @@
+---
+title: "CLI reference and permission boundaries"
+description: "Commands, flags, JSON output, native configuration, task states, session recovery, and permission limits for Agent Orchestrator."
+permalink: /cli/
+---
+
 # CLI contract
 
 Version 0.1.0 is a local, terminal-first supervisor. Node 22.13.0+ and existing native Codex/Claude logins are required for the default configuration; an Antigravity login is needed only when `agy` is installed and used. Dependencies are pinned: ACPX 0.19.3, codex-acp 1.13.1, and claude-agent-acp 0.81.2. No Grok/X capability is claimed. See [getting started](GETTING-STARTED.md) for installation prerequisites, supported environments, and account/model availability limits.
@@ -76,7 +82,7 @@ Defaults: Codex gpt-5.6-sol/high in agent Auto-review mode; Claude claude-opus-5
 
 ### Antigravity (`agy`)
 
-The `agy` harness (`protocol: "agy-print"`) runs the unmodified, logged-in CLI through its headless interface: `agy --print PROMPT --output-format stream-json --model MODEL --effort EFFORT --print-timeout Ns`, adding `--conversation ID` for replies. Google's separate `agy_acp_server` connector and Antigravity OAuth tokens are deliberately not used. This does not establish provider authorization: review the [Antigravity terms considerations](../THIRD-PARTY.md#antigravity-integration) before use. The default is `gemini-3.8-flash-medium`/medium. The harness is offered only when an `agy` executable is on PATH. It is spawned without a shell, so shell aliases (such as one adding `--dangerously-skip-permissions`) never apply, and that flag is rejected in configured commands.
+The `agy` harness (`protocol: "agy-print"`) runs the unmodified, logged-in CLI through its headless interface: `agy --print PROMPT --output-format stream-json --model MODEL --effort EFFORT --print-timeout Ns`, adding `--conversation ID` for replies. Google's separate `agy_acp_server` connector and Antigravity OAuth tokens are deliberately not used. This does not establish provider authorization: review the [Antigravity terms considerations](https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/THIRD-PARTY.md#antigravity-integration) before use. The default is `gemini-3.8-flash-medium`/medium. The harness is offered only when an `agy` executable is on PATH. It is spawned without a shell, so shell aliases (such as one adding `--dangerously-skip-permissions`) never apply, and that flag is rejected in configured commands.
 
 - Permissions come from the user's native `toolPermission` setting; no per-run override exists. The reported mode is recorded as `configuration.mode` but not enforced, by explicit user choice: under `always-proceed`, agy acts without any check the CLI can see. Under `request-review`, refused actions arrive as `denied_actions` and the task becomes needs_input; agy commonly tries shell verification commands, so otherwise complete turns may stop there.
 - Model and effort are passed as flags but not reported back, so they are recorded as requested, not verified.

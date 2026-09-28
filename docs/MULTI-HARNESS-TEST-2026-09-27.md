@@ -1,3 +1,9 @@
+---
+title: "Native harness verification report"
+description: "Recorded Codex, Claude Code, Antigravity, and other harness tests, with observed behavior, bounded results, and unverified limits."
+permalink: /verification/
+---
+
 # Live test report — 2026-09-26 to 2026-09-28
 
 Codex and Claude passed every exercised workflow. Antigravity (`agy`), run through its documented headless CLI, passed the same workflows. OpenCode works through a custom config. Grok and the legacy Gemini CLI cannot run through the CLI. Coordinator pilots on this repository and on three real repositories produced verified review findings that inform the coordinator skill's routing guidance.

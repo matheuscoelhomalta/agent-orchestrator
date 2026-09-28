@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="{{ site.lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% seo %}
+  <link rel="icon" href="{{ '/assets/favicon.svg' | relative_url }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="{{ '/' | relative_url }}"><span aria-hidden="true">ao_</span> Agent Orchestrator</a>
+    <a class="source-link" href="https://github.com/matheuscoelhomalta/agent-orchestrator">View on GitHub <span aria-hidden="true">↗</span></a>
+  </header>
+  <div class="shell">
+    <nav aria-label="Documentation">
+      <span class="nav-label">Documentation</span>
+      {% assign paths = '/,/getting-started/,/workflows/,/cli/,/coordinator/,/about/,/verification/' | split: ',' %}
+      {% assign labels = 'Overview,Getting started,Parallel workflows,CLI reference,Coordinator skill,About the project,Verification report' | split: ',' %}
+      {% for path in paths %}
+      <a href="{{ path | relative_url }}"{% if page.url == path %} aria-current="page"{% endif %}>{{ labels[forloop.index0] }}</a>
+      {% endfor %}
+      <span class="nav-label">Project</span>
+      <a href="https://github.com/matheuscoelhomalta/agent-orchestrator/releases">Releases</a>
+      <a href="https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/CONTRIBUTING.md">Contribute</a>
+      <a href="https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/SECURITY.md">Security</a>
+    </nav>
+    <main id="main" tabindex="-1"{% if page.url == '/' %} class="home"{% endif %}>
+      {{ content }}
+      <footer>
+        <p>Agent Orchestrator · <a href="https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/LICENSE">MIT license</a></p>
+        <p>Independent project. Native tools and services have their own <a href="https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/THIRD-PARTY.md">terms and licenses</a>.</p>
+        {% if page.path %}<a href="https://github.com/matheuscoelhomalta/agent-orchestrator/blob/main/docs/{{ page.path }}">View this page on GitHub</a>{% endif %}
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
