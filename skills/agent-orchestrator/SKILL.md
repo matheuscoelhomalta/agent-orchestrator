@@ -10,7 +10,7 @@ Use the installed `agent-orchestrator` command. Start with `command -v agent-orc
 
 ## Delegate
 
-Workers must be launched from an execution context that can access existing native harness state and logins. A nested launch inside a main agent's sandbox can fail even when terminal authentication works. In that case, report the launch blocker and monitor workers explicitly started from the normal terminal context; do not broaden permissions or automatically replay uncertain work.
+Workers must be launched from an execution context that can access existing native harness state and logins. Claude Code is the verified main agent: it launched, monitored, and accepted workers throughout the 2026-09-27/28 pilots. A Codex main agent's sandbox blocked worker startup in testing, and any nested launch inside a main agent's sandbox can fail even when terminal authentication works; do not loosen that sandbox to work around it. In that case, report the launch blocker and monitor workers explicitly started from the normal terminal context; do not broaden permissions or automatically replay uncertain work.
 
 Define each worker's objective, authorized scope, and concrete acceptance criteria. Start only independent tasks that materially benefit from delegation. Write the prompt to a file and run:
 

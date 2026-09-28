@@ -60,6 +60,8 @@ These results are the basis for the provisional routing guidance in the coordina
   - Next.js app: 5 + 5 findings; all Claude's confirmed; Codex's confirmed in code, with one documented as intentional by the repository's tests and one a modeling choice.
   - Trading bot: Codex's one high-severity finding confirmed; Claude's one finding (units of a trade-size field) conflicts with the REST reference example though a WebSocket example supports it, so it stays unconfirmed pending a real API response.
 - Details of the reviewed repositories are not recorded here; they were reported to the user directly.
+- **Remaining live gaps closed:** under `--strict`, Codex requested escalation, the CLI refused it, Codex ended the turn as cancelled, and the task settled as needs_input with nothing written. agy cancelled right after process start settled as cancelled within two seconds with no output or leftover process; cancels before start settled without dispatch.
+- **claude-agent-acp 0.76.0 → 0.81.2:** fixture suite plus live Claude review, mid-turn cancel, strict refusal, and same-session reply all passed; configuration readback and usage (`claude-opus-5-5`) unchanged. Tool calls now carry names (for example `Edit`, `Terminal`) in the event log.
 
 ## Verification
 

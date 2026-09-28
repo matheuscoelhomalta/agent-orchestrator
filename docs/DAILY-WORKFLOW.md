@@ -1,6 +1,6 @@
 # Daily workflow in Ghostty
 
-The installed CLI needs no daemon or UI. Open a new native agent session after installing skill links so its skill catalog can refresh. The skill is explicitly invoked: ask the main agent to use `$agent-orchestrator` with an objective, authorized paths, and concrete completion criteria. In Claude Code, the skill is also available as `/agent-orchestrator`. It does not select itself automatically.
+The installed CLI needs no daemon or UI. Open a new native agent session after installing skill links so its skill catalog can refresh. The skill is explicitly invoked: ask the main agent to use `$agent-orchestrator` with an objective, authorized paths, and concrete completion criteria. In Claude Code, the skill is also available as `/agent-orchestrator`. It does not select itself automatically. Claude Code is the verified main agent; a Codex main agent's sandbox blocked worker startup in testing.
 
 Example request: “Use agent-orchestrator to delegate a read-only correctness review to Codex and an accessibility review to Claude. Monitor both, resolve routine blockers, inspect each finding, and report only independently verified results. Do not modify files.”
 
