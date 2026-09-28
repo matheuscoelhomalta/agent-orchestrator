@@ -52,6 +52,15 @@ Pilot friction: monitoring required repeated polling loops, which led to the new
 
 These results are the basis for the provisional routing guidance in the coordinator skill; the sample is small.
 
+## Third round (2026-09-28): strict mode and a real-repository pilot
+
+- **`start --strict`** was added and verified live: Codex, Claude, and agy each completed an in-directory edit while a shell write to the home directory was blocked. A project `.claude/settings.json` Bash sandbox was also verified to reach Claude workers in default auto mode (shell only, no stops).
+- **Pilot:** Codex and Claude independently reviewed three of the user's own repositories (Go CLI, Next.js app, trading bot) in local clones, with agy as a third reviewer on one. Every finding was checked in source by the coordinator; two were reproduced by building and running the clone.
+  - Go CLI: 6 + 6 findings, all confirmed; 3 shared, 9 distinct.
+  - Next.js app: 5 + 5 findings; all Claude's confirmed; Codex's confirmed in code, with one documented as intentional by the repository's tests and one a modeling choice.
+  - Trading bot: Codex's one high-severity finding confirmed; Claude's one finding (units of a trade-size field) conflicts with the REST reference example though a WebSocket example supports it, so it stays unconfirmed pending a real API response.
+- Details of the reviewed repositories are not recorded here; they were reported to the user directly.
+
 ## Verification
 
 `make test`: syntax checks, 46 Node tests, and 3 installer tests pass. New tests cover agy completion and resume, denied actions, invalid output, cancellation, timeout, failure with and without tool activity, a missing conversation, `resolve` refusal while an orphaned agy process runs, unknown-harness errors, and `wait`. Live post-fix checks: an agy edit under `always-proceed` completed and was verified; agy and Codex 15-second timeouts settled as failed; `wait` returned when all three settled.

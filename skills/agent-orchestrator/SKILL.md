@@ -21,9 +21,10 @@ agent-orchestrator --json start --strict --harness claude --cwd /path/to/repo --
 
 Set worker timeouts that fit the overall task budget, leaving time for native startup, review, and settlement. Keep worker verification within the assigned files and acceptance criteria; unrelated concurrent artifacts are not a reason to broaden the task.
 
-Route by strength, then verify everything. Provisional guidance from the 2026-09-27 pilots (small sample):
+Route by strength, then verify everything. Provisional guidance from the 2026-09-27/28 pilots (five repositories; still a small sample):
 
-- Code correctness review: Codex first. For important changes add Claude as a second reviewer; each caught bugs the other missed.
+- Code correctness review: run Codex and Claude in parallel on anything important. In two of three pilot repositories each found confirmed bugs the other missed (overlap under half); in the third only Codex's finding was confirmed. Claude finished first every time; Codex traced longer cross-module paths.
+- Claims that depend on external API formats or live behavior: verify against the real system before acting, whoever reported them.
 - Documentation accuracy and sourced research: Claude. It separated verified from inferred claims most reliably.
 - Antigravity (`agy`): an independent extra opinion or Google-specific work. Do not accept its claims about tool or CLI behavior without evidence; in the pilot most such claims were contradicted.
 - Simple scoped edits: any harness.
