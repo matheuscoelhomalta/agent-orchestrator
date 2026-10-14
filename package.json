@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "acpx": "0.19.3",
-    "@agentclientprotocol/codex-acp": "1.13.1",
+    "@agentclientprotocol/codex-acp": "2.2.2",
     "@agentclientprotocol/claude-agent-acp": "0.81.2"
   },
   "repository": {
